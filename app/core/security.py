@@ -76,7 +76,9 @@ def get_current_token_payload(token: str = Depends(oauth2_scheme)) -> dict:
     return decode_token(token, expected_type="access")
 
 
-def get_optional_current_token_payload(token: str | None = Depends(optional_oauth2_scheme)) -> dict | None:
+def get_optional_current_token_payload(
+    token: str | None = Depends(optional_oauth2_scheme),
+) -> dict | None:
     if not token:
         return None
     return decode_token(token, expected_type="access")

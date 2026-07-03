@@ -4,9 +4,9 @@ import argparse
 import asyncio
 from collections.abc import Iterable
 
+import app.db.base  # noqa: F401
 from sqlalchemy import delete, select
 
-import app.db.base  # noqa: F401
 from app.db.session import AsyncSessionLocal
 from app.modules.restaurants.models import Category, Restaurant, RestaurantCategory
 
@@ -106,7 +106,12 @@ RESTAURANT_FIXTURES = [
 ]
 
 
-def _apply_fields(instance: Category | Restaurant, payload: dict[str, object], *, skip: Iterable[str] = ()) -> None:
+def _apply_fields(
+    instance: Category | Restaurant,
+    payload: dict[str, object],
+    *,
+    skip: Iterable[str] = (),
+) -> None:
     skip_fields = set(skip)
     for key, value in payload.items():
         if key in skip_fields:
@@ -124,7 +129,9 @@ async def seed_homepage_data(*, reset: bool) -> None:
 
         category_map: dict[str, Category] = {}
         for payload in CATEGORY_FIXTURES:
-            category = await session.scalar(select(Category).where(Category.slug == payload["slug"]))
+            category = await session.scalar(
+                select(Category).where(Category.slug == payload["slug"])
+            )
             if category is None:
                 category = Category(slug=str(payload["slug"]), name=str(payload["name"]))
                 session.add(category)

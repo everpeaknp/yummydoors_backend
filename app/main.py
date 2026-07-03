@@ -6,10 +6,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.db.base import Base  # noqa: F401
 from app.modules.auth.api import router as auth_router
-from app.modules.restaurants.api import router as restaurant_router
-from app.modules.customers.api import router as customer_router
 from app.modules.catalog.api import router as catalog_router
+from app.modules.customers.api import router as customer_router
 from app.modules.merchandising.api import router as merchandising_router
+from app.modules.restaurants.api import router as restaurant_router
 
 
 @asynccontextmanager
