@@ -1,0 +1,10 @@
+import app.modules.auth.models  # noqa: F401
+import app.modules.integrations.pos.models  # noqa: F401
+import app.modules.restaurants.models  # noqa: F401
+import app.modules.customers.models  # noqa: F401
+import app.modules.catalog.models  # noqa: F401
+import app.modules.merchandising.models  # noqa: F401
+
+from app.db.session import Base
+
+__all__ = ["Base"]

@@ -1,0 +1,3 @@
+[console_scripts]
+yummydoors-create-superuser = app.cli.create_superuser:main
+yummydoors-seed-homepage = app.cli.seed_homepage_data:main

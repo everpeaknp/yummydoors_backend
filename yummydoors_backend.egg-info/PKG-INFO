@@ -1,0 +1,145 @@
+Metadata-Version: 2.4
+Name: yummydoors-backend
+Version: 0.1.0
+Summary: YummyDoors backend in FastAPI
+Requires-Python: >=3.12
+Description-Content-Type: text/markdown
+Requires-Dist: alembic>=1.16.0
+Requires-Dist: asyncpg>=0.30.0
+Requires-Dist: bcrypt<5
+Requires-Dist: email-validator>=2.2.0
+Requires-Dist: fastapi>=0.116.0
+Requires-Dist: google-auth>=2.40.3
+Requires-Dist: passlib[bcrypt]>=1.7.4
+Requires-Dist: psycopg[binary]>=3.2.9
+Requires-Dist: pydantic-settings>=2.10.0
+Requires-Dist: python-jose[cryptography]>=3.5.0
+Requires-Dist: python-multipart>=0.0.20
+Requires-Dist: requests>=2.32.3
+Requires-Dist: sqlalchemy>=2.0.42
+Requires-Dist: uvicorn[standard]>=0.35.0
+Provides-Extra: dev
+Requires-Dist: httpx>=0.28.1; extra == "dev"
+Requires-Dist: pytest>=8.4.1; extra == "dev"
+Requires-Dist: pytest-asyncio>=1.1.0; extra == "dev"
+Requires-Dist: ruff>=0.12.3; extra == "dev"
+
+# YummyDoors Backend
+
+FastAPI backend foundation for YummyDoors.
+
+## Current scope
+
+- FastAPI app scaffold
+- async SQLAlchemy setup
+- Alembic migrations
+- auth foundation
+- local JWT auth with refresh rotation
+- RBAC base models
+- POS identity linking base models
+- homepage discovery foundation
+
+## Quick start
+
+1. Start the local PostgreSQL container:
+
+```bash
+docker compose up -d
+```
+
+2. Copy `.env.example` to `.env` and update values if needed.
+   The backend uses `YUMMYDOORS_`-prefixed variables to avoid collisions with
+   machine-level environment variables such as `DEBUG`.
+3. Create a virtual environment and install dependencies.
+4. Run migrations:
+
+```bash
+alembic upgrade head
+```
+
+5. Start the API:
+
+```bash
+uvicorn app.main:app --reload
+```
+
+Or use the local entrypoint:
+
+```bash
+./start.sh
+```
+
+If port `8000` is already taken:
+
+```bash
+YUMMYDOORS_APP_PORT=8001 ./start.sh
+```
+
+## Local database
+
+YummyDoors uses its own local PostgreSQL container on port `5434` so it does not
+conflict with the existing local Postgres container already bound to `5432`.
+
+Default local database values:
+
+- host: `localhost`
+- port: `5434`
+- database: `yummydoors`
+- user: `postgres`
+- password: `postgres`
+
+## Auth hardening notes
+
+- Password reset codes are only exposed in API responses when both
+  `YUMMYDOORS_DEBUG=true` and `YUMMYDOORS_DEBUG_EXPOSE_RESET_CODE=true`.
+- SMTP delivery is ready through the `YUMMYDOORS_SMTP_*` settings.
+- Auth-sensitive actions are rate-limited and written to auth audit logs.
+
+## Main endpoints
+
+- `GET /health`
+- `POST /api/v1/auth/register`
+- `POST /api/v1/auth/login`
+- `POST /api/v1/auth/google`
+- `POST /api/v1/auth/refresh`
+- `POST /api/v1/auth/logout`
+- `POST /api/v1/auth/password-reset/request`
+- `POST /api/v1/auth/password-reset/confirm`
+- `POST /api/v1/auth/change-password`
+- `GET /api/v1/auth/me`
+- `GET /api/v1/restaurants`
+- `GET /api/v1/home/feed`
+
+## Superuser bootstrap
+
+Create or update the initial Doors superuser:
+
+```bash
+yummydoors-create-superuser \
+  --email admin@yummydoors.local \
+  --password 'ChangeMe123!' \
+  --full-name 'YummyDoors Super Admin'
+```
+
+## Homepage bootstrap
+
+Seed the first homepage/discovery data after a fresh local reset:
+
+```bash
+yummydoors-seed-homepage --reset
+```
+
+This seeds:
+
+- featured homepage categories
+- starter active restaurants
+- restaurant to category mappings
+
+The first customer-facing backend contract is now:
+
+- `GET /api/v1/home/feed`
+  - location context
+  - featured categories
+  - restaurant cards
+- `GET /api/v1/restaurants`
+  - active restaurant discovery feed
