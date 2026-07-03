@@ -49,6 +49,39 @@ If port `8000` is already taken:
 YUMMYDOORS_APP_PORT=8001 ./start.sh
 ```
 
+## Production deployment
+
+This repo now includes two deployment paths:
+
+- recommended now: VPS production deployment for your current multi-project server
+- optional alternative: Cloud Run deployment modeled after `yummy_backend`
+
+Files:
+
+- `Dockerfile`
+- `docker-compose.prod.yml`
+- `.env.production.example`
+- `scripts/entrypoint.sh`
+- `scripts/deploy.sh`
+- `.github/workflows/deploy-vps.yml`
+- `deploy-cloud-run.sh`
+- `yummydoors-app.yaml`
+- `.github/workflows/ci.yml`
+- `.github/workflows/deploy-cloud-run.yml`
+- `docs/DEPLOYMENT_SETUP.md`
+- `docs/VPS_PRODUCTION_DEPLOYMENT.md`
+
+The production container runs:
+
+1. `alembic upgrade head`
+2. `gunicorn` with `uvicorn` workers on `${PORT:-8080}`
+
+The repo also includes:
+
+- CI on push and pull request
+- Cloud Run deployment from GitHub Actions
+- VPS CI/CD deployment from GitHub Actions with env sync
+
 ## Local database
 
 YummyDoors uses its own local PostgreSQL container on port `5434` so it does not

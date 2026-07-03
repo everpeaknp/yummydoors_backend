@@ -1,0 +1,55 @@
+location: southeastasia
+name: yummydoors-backend
+resourceGroup: CHANGE_ME
+type: Microsoft.App/containerApps
+properties:
+  configuration:
+    activeRevisionsMode: Single
+    ingress:
+      external: true
+      targetPort: 8080
+      transport: auto
+    registries:
+      - server: CHANGE_ME.azurecr.io
+        identity: system-environment
+  template:
+    containers:
+      - name: yummydoors-backend
+        image: CHANGE_ME.azurecr.io/yummydoors-backend:latest
+        resources:
+          cpu: 1.0
+          memory: 2.0Gi
+        env:
+          - name: YUMMYDOORS_APP_ENV
+            value: "production"
+          - name: YUMMYDOORS_DEBUG
+            value: "false"
+          - name: YUMMYDOORS_DB_ECHO
+            value: "false"
+          - name: YUMMYDOORS_API_V1_PREFIX
+            value: "/api/v1"
+          - name: YUMMYDOORS_DATABASE_URL
+            secretRef: yummydoors-database-url
+          - name: YUMMYDOORS_POS_DATABASE_URL
+            secretRef: yummydoors-pos-database-url
+          - name: YUMMYDOORS_JWT_SECRET_KEY
+            secretRef: yummydoors-jwt-secret-key
+          - name: YUMMYDOORS_SMTP_HOST
+            value: "smtp.gmail.com"
+          - name: YUMMYDOORS_SMTP_PORT
+            value: "587"
+          - name: YUMMYDOORS_SMTP_USERNAME
+            secretRef: yummydoors-smtp-username
+          - name: YUMMYDOORS_SMTP_PASSWORD
+            secretRef: yummydoors-smtp-password
+          - name: YUMMYDOORS_SMTP_FROM_EMAIL
+            value: "YummyDoors <support@yummydoors.com>"
+          - name: YUMMYDOORS_SMTP_USE_TLS
+            value: "true"
+          - name: YUMMYDOORS_CORS_ORIGINS
+            value: "https://doors.yummyever.com,https://www.yummyever.com,http://localhost:3000"
+    scale:
+      cooldownPeriod: 300
+      maxReplicas: 10
+      minReplicas: 0
+      pollingInterval: 30

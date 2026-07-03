@@ -1,0 +1,44 @@
+name: Deploy To Cloud Run
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    env:
+      PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      REGION: ${{ secrets.GCP_REGION }}
+      SERVICE_NAME: ${{ secrets.CLOUD_RUN_SERVICE }}
+      REPOSITORY: ${{ secrets.ARTIFACT_REGISTRY_REPOSITORY }}
+      IMAGE_TAG: ${{ github.sha }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Validate required deploy inputs
+        run: |
+          test -n "$PROJECT_ID"
+          test -n "$REGION"
+          test -n "$SERVICE_NAME"
+          test -n "$REPOSITORY"
+
+      - name: Deploy backend
+        run: ./deploy-cloud-run.sh
