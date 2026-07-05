@@ -20,7 +20,7 @@ multi-project VPS.
 - `.env.production.example`
 - `scripts/entrypoint.sh`
 - `scripts/deploy.sh`
-- `.github/workflows/deploy-vps.yml`
+- `.github/workflows/deploy.yml`
 - `.github/workflows/ci.yml`
 
 ## First-time server setup
@@ -58,7 +58,7 @@ bash scripts/deploy.sh
 This repo is now set so that:
 
 - pull requests and pushes run CI
-- pushes to `main` run deploy after quality checks pass
+- pushes to `main` run VPS deploy
 - the production env file is re-synced to the server on every deploy
 
 ### Required GitHub Secrets
