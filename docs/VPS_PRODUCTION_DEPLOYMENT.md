@@ -5,7 +5,7 @@
 For the current server layout we verified, the active production model is:
 
 - Docker Compose on the VPS
-- image-based deploys using `ramoniswack/yummydoors-backend:latest`
+- image-based deploys using `ramoniswack/yummydoors-backend`
 - app exposed only on `127.0.0.1`
 - host-level reverse proxy in front of it
 - GitHub Actions CI/CD with SSH deploy
@@ -46,7 +46,8 @@ Set at minimum:
 ### 3. Deploy manually if needed
 
 ```bash
-docker compose pull
+docker pull ramoniswack/yummydoors-backend:<commit-sha>
+docker tag ramoniswack/yummydoors-backend:<commit-sha> ramoniswack/yummydoors-backend:latest
 docker compose up -d --force-recreate app
 ```
 
@@ -56,7 +57,8 @@ This repo is now set so that:
 
 - pull requests and pushes run CI
 - pushes to `main` build and push the Docker image, then run VPS deploy
-- the server pulls the latest image and recreates the `app` service
+- the server pulls the exact commit SHA image, retags it locally as `latest`,
+  recreates the `app` service, and verifies `/health`
 
 ### Required GitHub Secrets
 
@@ -95,7 +97,8 @@ That keeps TLS and public routing centralized across your server.
 - Alembic migrations run during app startup
 - app port bound to localhost only
 - GitHub Actions CI gate before deploy
-- production image pull and app recreate on every deploy
+- exact image pull by commit SHA
+- app recreate and health verification on every deploy
 
 ## Notes
 

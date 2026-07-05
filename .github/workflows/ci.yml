@@ -107,7 +107,7 @@ jobs:
             -p "${{ secrets.VPS_PORT }}" \
             "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" "echo ssh-ok"
 
-      - name: Deploy latest image on server
+      - name: Deploy exact image on server
         run: |
           ssh -i ~/.ssh/yummydoors_deploy_key \
           -o IdentitiesOnly=yes \
@@ -116,7 +116,9 @@ jobs:
           -p "${{ secrets.VPS_PORT }}" "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" <<'EOF'
           set -euo pipefail
           cd "${{ secrets.VPS_PROJECT_PATH }}"
-          docker compose pull
+          docker pull "${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          docker tag "${{ env.IMAGE_NAME }}:${{ github.sha }}" "${{ env.IMAGE_NAME }}:latest"
           docker compose up -d --force-recreate app
           docker compose ps
+          timeout 90 sh -c 'until curl -fsS http://127.0.0.1:8010/health; do sleep 3; done'
           EOF
