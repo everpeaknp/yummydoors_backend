@@ -7,6 +7,7 @@ import app.modules.restaurants.models  # noqa: F401
 import app.modules.workspaces.models  # noqa: F401
 import app.modules.carts.models  # noqa: F401
 import app.modules.orders.models  # noqa: F401
+import app.modules.reservations.models  # noqa: F401
 
 from app.db.session import Base
 

@@ -10,11 +10,55 @@ from app.modules.auth.api import router as auth_router
 from app.modules.catalog.api import router as catalog_router
 from app.modules.customers.api import router as customer_router
 from app.modules.merchandising.api import router as merchandising_router
+from app.modules.reservations.api import router as reservations_router
 from app.modules.restaurants.api import router as restaurant_router
 from app.modules.workspaces.api import router as workspace_router
 
 from app.modules.carts.api import router as carts_router
 from app.modules.orders.api import router as orders_router
+
+OPENAPI_TAGS = [
+    {
+        "name": "auth",
+        "description": "Authentication, token lifecycle, password reset, and current-user auth session endpoints.",
+    },
+    {
+        "name": "Admin",
+        "description": "Admin-only ingestion and approval surfaces for restaurants, menu structure, promos, and merchant onboarding.",
+    },
+    {
+        "name": "restaurants",
+        "description": "Customer-facing restaurant discovery, restaurant detail, home feed, and public reviews endpoints.",
+    },
+    {
+        "name": "Customers",
+        "description": "Authenticated customer profile and saved-address management endpoints.",
+    },
+    {
+        "name": "Catalog",
+        "description": "Restaurant category and menu item management endpoints used by merchant or admin flows.",
+    },
+    {
+        "name": "Merchandising",
+        "description": "Homepage, banner, and promo merchandising management endpoints.",
+    },
+    {
+        "name": "Workspaces",
+        "description": "Merchant/customer multi-workspace, onboarding, and restaurant claim/create request flows.",
+    },
+    {
+        "name": "Carts",
+        "description": "Cart item, cart context, and starter coupon application endpoints for customer checkout flows.",
+    },
+    {
+        "name": "Orders",
+        "description": "Checkout, placed-order history, and order detail endpoints.",
+    },
+    {
+        "name": "Reservations",
+        "description": "Table-booking availability, reservation creation, reservation history, and cancellation endpoints.",
+    },
+]
 
 
 @asynccontextmanager
@@ -31,6 +75,7 @@ app = FastAPI(
     version="0.1.0",
     debug=settings.debug,
     lifespan=lifespan,
+    openapi_tags=OPENAPI_TAGS,
 )
 
 app.add_middleware(
@@ -50,6 +95,7 @@ app.include_router(merchandising_router, prefix=settings.api_v1_prefix)
 app.include_router(workspace_router, prefix=settings.api_v1_prefix)
 app.include_router(carts_router, prefix=settings.api_v1_prefix)
 app.include_router(orders_router, prefix=settings.api_v1_prefix)
+app.include_router(reservations_router, prefix=settings.api_v1_prefix)
 
 
 @app.get("/health")
