@@ -1,5 +1,8 @@
 name: Backend CI
 
+env:
+  IMAGE_NAME: ramoniswack/yummydoors-backend
+
 on:
   pull_request:
   push:
@@ -68,8 +71,8 @@ jobs:
           file: ./Dockerfile
           push: true
           tags: |
-            ${{ secrets.DOCKER_USERNAME }}/yummydoors-backend:latest
-            ${{ secrets.DOCKER_USERNAME }}/yummydoors-backend:${{ github.sha }}
+            ${{ env.IMAGE_NAME }}:latest
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}
 
   deploy:
     runs-on: ubuntu-latest
