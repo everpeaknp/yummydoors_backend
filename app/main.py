@@ -56,7 +56,7 @@ OPENAPI_TAGS = [
     },
     {
         "name": "Reservations",
-        "description": "Table-booking availability, reservation creation, reservation history, and cancellation endpoints.",
+        "description": "Table-booking availability, table inventory, customer reservations, and merchant reservation-management endpoints.",
     },
 ]
 

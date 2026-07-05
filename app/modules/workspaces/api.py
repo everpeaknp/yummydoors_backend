@@ -20,7 +20,7 @@ from app.modules.workspaces.schemas import (
 from app.modules.workspaces.service import WorkspaceService
 from app.schemas.common import ApiResponse
 
-router = APIRouter(tags=["workspaces"])
+router = APIRouter(tags=["Workspaces"])
 
 
 @router.get("/workspaces/me", response_model=ApiResponse[WorkspaceListResponse])

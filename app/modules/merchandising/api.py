@@ -8,7 +8,7 @@ from app.modules.merchandising.schemas import PromoBannerResponse
 from app.modules.merchandising.service import MerchandisingService
 from app.modules.merchandising.models import PromoPlacement
 
-router = APIRouter(tags=["merchandising"])
+router = APIRouter(tags=["Merchandising"])
 
 @router.get("/promos", response_model=ApiResponse[List[PromoBannerResponse]])
 async def list_promos(

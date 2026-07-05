@@ -23,7 +23,7 @@ from app.modules.restaurants.schemas import (
 )
 from app.schemas.common import ApiResponse
 
-router = APIRouter(tags=["catalog"])
+router = APIRouter(tags=["Catalog"])
 
 
 @router.get("/restaurants/{restaurant_id}/menu", response_model=ApiResponse[List[MenuItemResponse]])

@@ -34,7 +34,7 @@ data for:
 ### Still missing or too thin
 
 - wishlist/favorites
-- reservations / table booking
+- reservations / table booking merchant UI and advanced slot rules
 - review create/update moderation flow
 - coupon catalog and promo validation rules beyond starter cart contract
 - delivery rider/live tracking payloads
@@ -67,7 +67,8 @@ data for:
 ### Phase 4: Secondary Product Flows
 
 - [ ] wishlist / favorites
-- [ ] reservations / table booking
+- [x] reservations / table booking backend foundation
+- [ ] reservations / table booking desktop/admin UI and advanced scheduling rules
 - [x] restaurant facilities and extended content sections
 - [ ] merchant-side content management for the new fields
 
@@ -174,6 +175,6 @@ This rollout completed:
 ## Next Backend Slice
 
 1. wishlist / favorites
-2. reservations / table booking
+2. real reservation slot rule engine
 3. coupon catalog and validation model
 4. live rider/tracking payload shape

@@ -1,15 +1,27 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
+from datetime import date
+
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.db.session import get_db
 from app.modules.auth.deps import require_role
+from app.modules.auth.models import User
 from app.services.cloudinary_service import CloudinaryService
 from app.modules.catalog.models import MenuItem
 from app.modules.merchandising.models import PromoBanner
+from app.modules.reservations.models import ReservationStatus
+from app.modules.reservations.schemas import (
+    ReservationResponse,
+    ReservationStatusUpdateRequest,
+    RestaurantTableCreateRequest,
+    RestaurantTableSummary,
+    RestaurantTableUpdateRequest,
+)
+from app.modules.reservations.service import ReservationService
 from app.modules.restaurants.models import Category, Restaurant, RestaurantCategory
 from app.modules.admin.schemas import (
     AdminCategoryCreate,
@@ -27,7 +39,7 @@ from app.modules.admin.schemas import (
 )
 from app.schemas.common import ApiResponse
 
-router = APIRouter(prefix="/admin", tags=["admin"])
+router = APIRouter(prefix="/admin", tags=["Admin"])
 
 
 def _restaurant_query():
@@ -392,6 +404,124 @@ async def delete_promo(promo_id: int, db: AsyncSession = Depends(get_db)):
     await db.delete(promo)
     await db.commit()
     return ApiResponse(message="Admin promo deleted successfully.", data={"success": True})
+
+
+@router.get(
+    "/restaurants/{restaurant_id}/reservation-tables",
+    response_model=ApiResponse[list[RestaurantTableSummary]],
+)
+async def list_admin_reservation_tables(
+    restaurant_id: int,
+    current_user: User = Depends(require_role(["super_admin"])),
+    db: AsyncSession = Depends(get_db),
+):
+    service = ReservationService(db)
+    data = await service.list_merchant_tables(current_user, restaurant_id)
+    return ApiResponse(message="Admin reservation tables fetched successfully.", data=data)
+
+
+@router.post(
+    "/restaurants/{restaurant_id}/reservation-tables",
+    response_model=ApiResponse[RestaurantTableSummary],
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_admin_reservation_table(
+    restaurant_id: int,
+    payload: RestaurantTableCreateRequest,
+    current_user: User = Depends(require_role(["super_admin"])),
+    db: AsyncSession = Depends(get_db),
+):
+    service = ReservationService(db)
+    data = await service.create_merchant_table(current_user, restaurant_id, payload)
+    return ApiResponse(message="Admin reservation table created successfully.", data=data)
+
+
+@router.put(
+    "/restaurants/{restaurant_id}/reservation-tables/{table_id}",
+    response_model=ApiResponse[RestaurantTableSummary],
+)
+async def update_admin_reservation_table(
+    restaurant_id: int,
+    table_id: int,
+    payload: RestaurantTableUpdateRequest,
+    current_user: User = Depends(require_role(["super_admin"])),
+    db: AsyncSession = Depends(get_db),
+):
+    service = ReservationService(db)
+    data = await service.update_merchant_table(current_user, restaurant_id, table_id, payload)
+    return ApiResponse(message="Admin reservation table updated successfully.", data=data)
+
+
+@router.delete(
+    "/restaurants/{restaurant_id}/reservation-tables/{table_id}",
+    response_model=ApiResponse[dict],
+)
+async def delete_admin_reservation_table(
+    restaurant_id: int,
+    table_id: int,
+    current_user: User = Depends(require_role(["super_admin"])),
+    db: AsyncSession = Depends(get_db),
+):
+    service = ReservationService(db)
+    await service.delete_merchant_table(current_user, restaurant_id, table_id)
+    return ApiResponse(message="Admin reservation table deleted successfully.", data={"success": True})
+
+
+@router.get(
+    "/restaurants/{restaurant_id}/reservations",
+    response_model=ApiResponse[list[ReservationResponse]],
+)
+async def list_admin_reservations(
+    restaurant_id: int,
+    reservation_date: date | None = Query(default=None),
+    status_filter: ReservationStatus | None = Query(default=None, alias="status"),
+    current_user: User = Depends(require_role(["super_admin"])),
+    db: AsyncSession = Depends(get_db),
+):
+    service = ReservationService(db)
+    data = await service.list_merchant_reservations(
+        current_user,
+        restaurant_id,
+        reservation_date=reservation_date,
+        status_filter=status_filter,
+    )
+    return ApiResponse(message="Admin reservations fetched successfully.", data=data)
+
+
+@router.get(
+    "/restaurants/{restaurant_id}/reservations/{reservation_id}",
+    response_model=ApiResponse[ReservationResponse],
+)
+async def get_admin_reservation(
+    restaurant_id: int,
+    reservation_id: int,
+    current_user: User = Depends(require_role(["super_admin"])),
+    db: AsyncSession = Depends(get_db),
+):
+    service = ReservationService(db)
+    data = await service.get_merchant_reservation(current_user, restaurant_id, reservation_id)
+    return ApiResponse(message="Admin reservation fetched successfully.", data=data)
+
+
+@router.post(
+    "/restaurants/{restaurant_id}/reservations/{reservation_id}/status",
+    response_model=ApiResponse[ReservationResponse],
+)
+async def update_admin_reservation_status(
+    restaurant_id: int,
+    reservation_id: int,
+    payload: ReservationStatusUpdateRequest,
+    current_user: User = Depends(require_role(["super_admin"])),
+    db: AsyncSession = Depends(get_db),
+):
+    service = ReservationService(db)
+    data = await service.update_merchant_reservation_status(
+        current_user,
+        restaurant_id,
+        reservation_id,
+        payload,
+    )
+    return ApiResponse(message="Admin reservation updated successfully.", data=data)
 
 
 @router.post(

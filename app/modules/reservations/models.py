@@ -69,6 +69,7 @@ class TableReservation(Base, TimestampMixin):
     contact_name: Mapped[str] = mapped_column(String(255), nullable=False)
     contact_phone: Mapped[str] = mapped_column(String(32), nullable=False)
     contact_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    occasion: Mapped[str | None] = mapped_column(String(255), nullable=True)
     special_request: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     source: Mapped[str] = mapped_column(String(32), default="yummydoors", nullable=False)
     cancellation_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
