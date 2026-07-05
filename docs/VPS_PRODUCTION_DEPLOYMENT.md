@@ -2,13 +2,12 @@
 
 ## Recommended deployment for your current server
 
-For the server layout you showed, the strongest deployment model is:
+For the current server layout we verified, the active production model is:
 
-- one repo checkout on the VPS
-- Docker Compose for app plus PostgreSQL
+- Docker Compose on the VPS
+- image-based deploys using `ramoniswack/yummydoors-backend:latest`
 - app exposed only on `127.0.0.1`
 - host-level reverse proxy in front of it
-- deploys through `scripts/deploy.sh`
 - GitHub Actions CI/CD with SSH deploy
 
 This is a better fit for your current box than forcing Cloud Run patterns onto a
@@ -20,23 +19,20 @@ multi-project VPS.
 - `.env.production.example`
 - `scripts/entrypoint.sh`
 - `scripts/deploy.sh`
-- `.github/workflows/deploy.yml`
 - `.github/workflows/ci.yml`
 
 ## First-time server setup
 
-### 1. Clone repo on the server
+### 1. Prepare the VPS project folder
 
 ```bash
-cd ~
-git clone git@github.com:everpeaknp/yummydoors_backend.git
-cd yummydoors_backend
+cd ~/yummydoors_backend
 ```
 
 ### 2. Prepare env file
 
 ```bash
-cp .env.production.example .env.production
+touch .env.production
 ```
 
 Set at minimum:
@@ -47,10 +43,11 @@ Set at minimum:
 - `YUMMYDOORS_CORS_ORIGINS`
 - SMTP credentials
 
-### 3. Deploy
+### 3. Deploy manually if needed
 
 ```bash
-bash scripts/deploy.sh
+docker compose pull
+docker compose up -d --force-recreate app
 ```
 
 ## GitHub Actions CI/CD
@@ -58,33 +55,24 @@ bash scripts/deploy.sh
 This repo is now set so that:
 
 - pull requests and pushes run CI
-- pushes to `main` run VPS deploy
-- the production env file is re-synced to the server on every deploy
+- pushes to `main` build and push the Docker image, then run VPS deploy
+- the server pulls the latest image and recreates the `app` service
 
 ### Required GitHub Secrets
 
+- `DOCKER_USERNAME`
+- `DOCKER_PASSWORD`
 - `VPS_HOST`
 - `VPS_PORT`
 - `VPS_USER`
 - `VPS_SSH_KEY`
 - `VPS_PROJECT_PATH`
-- `ENV_PRODUCTION`
-
-### Important env rule
-
-`ENV_PRODUCTION` should contain the full contents of `.env.production`.
-
-That means:
-
-- code changes deploy from git
-- env changes deploy from GitHub secret updates
-- the server does not silently drift from the CI/CD source of truth
 
 ### 4. Check runtime
 
 ```bash
-docker compose -f docker-compose.prod.yml --env-file .env.production ps
-docker compose -f docker-compose.prod.yml --env-file .env.production logs -f app
+docker compose ps
+docker compose logs -f app
 curl http://127.0.0.1:8010/health
 ```
 
@@ -104,11 +92,10 @@ That keeps TLS and public routing centralized across your server.
 - Gunicorn with Uvicorn workers
 - PostgreSQL healthchecks
 - startup waits for DB readiness
-- Alembic migrations run during deploy startup
+- Alembic migrations run during app startup
 - app port bound to localhost only
-- repeatable deploy script
 - GitHub Actions CI gate before deploy
-- production env sync on every deploy
+- production image pull and app recreate on every deploy
 
 ## Notes
 
