@@ -64,11 +64,14 @@ This repo is now set so that:
 
 - `DOCKER_USERNAME`
 - `DOCKER_PASSWORD`
-- `VPS_HOST`
-- `VPS_PORT`
-- `VPS_USER`
 - `VPS_SSH_KEY`
-- `VPS_PROJECT_PATH`
+
+The current workflow hardcodes these non-sensitive deploy target values:
+
+- host: `203.134.250.212`
+- port: `2025`
+- user: `evaracy`
+- project path: `/home/evaracy/yummydoors_backend`
 
 ### 4. Check runtime
 

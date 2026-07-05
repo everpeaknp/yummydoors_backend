@@ -2,6 +2,10 @@ name: Backend CI
 
 env:
   IMAGE_NAME: ramoniswack/yummydoors-backend
+  VPS_HOSTNAME: 203.134.250.212
+  VPS_PORT_NUMBER: "2025"
+  VPS_USERNAME: evaracy
+  VPS_APP_PATH: /home/evaracy/yummydoors_backend
 
 on:
   pull_request:
@@ -96,7 +100,7 @@ jobs:
       - name: Add VPS host to known_hosts
         run: |
           mkdir -p ~/.ssh
-          ssh-keyscan -p "${{ secrets.VPS_PORT }}" "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
+          ssh-keyscan -p "${{ env.VPS_PORT_NUMBER }}" "${{ env.VPS_HOSTNAME }}" >> ~/.ssh/known_hosts
 
       - name: SSH preflight
         run: |
@@ -104,8 +108,8 @@ jobs:
             -o IdentitiesOnly=yes \
             -o BatchMode=yes \
             -o StrictHostKeyChecking=yes \
-            -p "${{ secrets.VPS_PORT }}" \
-            "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" "echo ssh-ok"
+            -p "${{ env.VPS_PORT_NUMBER }}" \
+            "${{ env.VPS_USERNAME }}@${{ env.VPS_HOSTNAME }}" "echo ssh-ok"
 
       - name: Deploy exact image on server
         run: |
@@ -113,9 +117,9 @@ jobs:
           -o IdentitiesOnly=yes \
           -o BatchMode=yes \
           -o StrictHostKeyChecking=yes \
-          -p "${{ secrets.VPS_PORT }}" "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" <<'EOF'
+          -p "${{ env.VPS_PORT_NUMBER }}" "${{ env.VPS_USERNAME }}@${{ env.VPS_HOSTNAME }}" <<'EOF'
           set -euo pipefail
-          cd "${{ secrets.VPS_PROJECT_PATH }}"
+          cd "${{ env.VPS_APP_PATH }}"
           docker pull "${{ env.IMAGE_NAME }}:${{ github.sha }}"
           docker tag "${{ env.IMAGE_NAME }}:${{ github.sha }}" "${{ env.IMAGE_NAME }}:latest"
           docker compose up -d --force-recreate app
