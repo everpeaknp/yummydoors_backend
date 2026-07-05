@@ -26,6 +26,7 @@ class PromoBanner(Base, TimestampMixin):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     subtitle: Mapped[str | None] = mapped_column(String(255), nullable=True)
     image_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    image_url_mobile: Mapped[str | None] = mapped_column(String(500), nullable=True)
     
     placement: Mapped[PromoPlacement] = mapped_column(SQLEnum(PromoPlacement), default=PromoPlacement.home_carousel, nullable=False)
     target_type: Mapped[PromoTargetType] = mapped_column(SQLEnum(PromoTargetType), default=PromoTargetType.none, nullable=False)

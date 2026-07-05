@@ -114,7 +114,21 @@ Default local database values:
 - `POST /api/v1/auth/password-reset/confirm`
 - `POST /api/v1/auth/change-password`
 - `GET /api/v1/auth/me`
+- `GET /api/v1/workspaces/me`
+- `POST /api/v1/workspaces/switch`
+- `GET /api/v1/merchant/applications/me`
+- `GET /api/v1/merchant/restaurants/me`
+- `POST /api/v1/merchant/applications`
+- `POST /api/v1/merchant/restaurants/switch`
+- `GET /api/v1/merchant/applications/{application_id}`
+- `PATCH /api/v1/merchant/applications/{application_id}`
+- `POST /api/v1/merchant/applications/{application_id}/restaurant-requests`
+- `POST /api/v1/merchant/applications/{application_id}/submit`
+- `GET /api/v1/admin/merchant-applications`
+- `POST /api/v1/admin/merchant-applications/{application_id}/approve`
+- `POST /api/v1/admin/merchant-applications/{application_id}/reject`
 - `GET /api/v1/restaurants`
+- `GET /api/v1/restaurants/{slug}`
 - `GET /api/v1/home/feed`
 
 ## Superuser bootstrap

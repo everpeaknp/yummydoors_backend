@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from app.modules.integrations.pos.models import ExternalUserLink
     from app.modules.restaurants.models import RestaurantUserAssignment
     from app.modules.customers.models import CustomerAddress
+    from app.modules.workspaces.models import MerchantApplication, Workspace, WorkspaceMembership
 
 
 class UserStatus(StrEnum):
@@ -36,6 +37,14 @@ class User(Base, TimestampMixin):
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     default_address_id: Mapped[int | None] = mapped_column(ForeignKey("customer_addresses.id", ondelete="SET NULL", use_alter=True), nullable=True)
+    active_restaurant_id: Mapped[int | None] = mapped_column(
+        ForeignKey("restaurants.id", ondelete="SET NULL", use_alter=True),
+        nullable=True,
+    )
+    active_workspace_id: Mapped[int | None] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="SET NULL", use_alter=True),
+        nullable=True,
+    )
 
     roles: Mapped[list[UserRole]] = relationship(back_populates="user", cascade="all, delete-orphan")
     refresh_sessions: Mapped[list[RefreshSession]] = relationship(
@@ -52,6 +61,20 @@ class User(Base, TimestampMixin):
     )
     addresses: Mapped[list["CustomerAddress"]] = relationship(
         "CustomerAddress", back_populates="user", cascade="all, delete-orphan", foreign_keys="[CustomerAddress.user_id]"
+    )
+    workspace_memberships: Mapped[list["WorkspaceMembership"]] = relationship(
+        "WorkspaceMembership",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    active_workspace: Mapped["Workspace | None"] = relationship(
+        "Workspace",
+        foreign_keys=[active_workspace_id],
+    )
+    merchant_applications: Mapped[list["MerchantApplication"]] = relationship(
+        "MerchantApplication",
+        back_populates="user",
+        cascade="all, delete-orphan",
     )
 
     __table_args__ = (

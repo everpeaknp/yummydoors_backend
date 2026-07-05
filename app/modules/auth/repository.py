@@ -17,6 +17,7 @@ from app.modules.auth.models import (
 )
 from app.modules.integrations.pos.models import ExternalUserLink
 from app.modules.restaurants.models import RestaurantUserAssignment
+from app.modules.workspaces.models import Workspace, WorkspaceMembership
 
 
 class AuthRepository:
@@ -32,6 +33,10 @@ class AuthRepository:
                     RestaurantUserAssignment.restaurant
                 ),
                 selectinload(User.external_links),
+                selectinload(User.active_workspace).selectinload(Workspace.primary_restaurant),
+                selectinload(User.workspace_memberships)
+                .selectinload(WorkspaceMembership.workspace)
+                .selectinload(Workspace.primary_restaurant),
             )
             .where(User.id == user_id)
         )
@@ -53,6 +58,10 @@ class AuthRepository:
                 selectinload(User.roles).selectinload(UserRole.role).selectinload(Role.permissions),
                 selectinload(User.restaurant_assignments),
                 selectinload(User.external_links),
+                selectinload(User.active_workspace).selectinload(Workspace.primary_restaurant),
+                selectinload(User.workspace_memberships)
+                .selectinload(WorkspaceMembership.workspace)
+                .selectinload(Workspace.primary_restaurant),
             )
             .where(or_(User.email == identifier.lower(), User.phone == identifier))
         )

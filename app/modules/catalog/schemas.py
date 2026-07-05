@@ -26,6 +26,30 @@ class MenuModifierGroupResponse(MenuModifierGroupBase):
     
     model_config = ConfigDict(from_attributes=True)
 
+class MenuItemCreate(BaseModel):
+    name: str = Field(..., max_length=255)
+    slug: str = Field(..., max_length=255)
+    description: Optional[str] = Field(None, max_length=1000)
+    image_url: Optional[str] = Field(None, max_length=500)
+    price: float
+    currency_code: str = "NPR"
+    category_id: Optional[int] = None
+    food_type: Optional[FoodType] = None
+    is_available: bool = True
+    is_spicy: bool = False
+
+class MenuItemUpdate(BaseModel):
+    name: Optional[str] = Field(None, max_length=255)
+    slug: Optional[str] = Field(None, max_length=255)
+    description: Optional[str] = Field(None, max_length=1000)
+    image_url: Optional[str] = Field(None, max_length=500)
+    price: Optional[float] = None
+    currency_code: Optional[str] = None
+    category_id: Optional[int] = None
+    food_type: Optional[FoodType] = None
+    is_available: Optional[bool] = None
+    is_spicy: Optional[bool] = None
+
 class MenuItemBase(BaseModel):
     slug: str = Field(..., max_length=255)
     name: str = Field(..., max_length=255)

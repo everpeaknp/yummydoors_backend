@@ -33,7 +33,15 @@ class Restaurant(Base, TimestampMixin):
     review_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     supports_delivery: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     has_free_delivery: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    supports_pickup: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    supports_table_booking: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     offer_text: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    contact_phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    contact_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    opening_time: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    closing_time: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    about_text: Mapped[str | None] = mapped_column(String(4000), nullable=True)
+    facilities_text: Mapped[str | None] = mapped_column(String(4000), nullable=True)
     delivery_eta_min_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     delivery_eta_max_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     sort_rank: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
@@ -49,6 +57,9 @@ class Restaurant(Base, TimestampMixin):
         back_populates="restaurant", cascade="all, delete-orphan"
     )
     category_links: Mapped[list[RestaurantCategory]] = relationship(
+        back_populates="restaurant", cascade="all, delete-orphan"
+    )
+    reviews: Mapped[list["RestaurantReview"]] = relationship(
         back_populates="restaurant", cascade="all, delete-orphan"
     )
 
@@ -125,3 +136,19 @@ class RestaurantCategory(Base):
 
     restaurant: Mapped[Restaurant] = relationship(back_populates="category_links")
     category: Mapped[Category] = relationship(back_populates="restaurant_links")
+
+
+class RestaurantReview(Base, TimestampMixin):
+    __tablename__ = "restaurant_reviews"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    restaurant_id: Mapped[int] = mapped_column(
+        ForeignKey("restaurants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    author_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    rating: Mapped[float] = mapped_column(Float, nullable=False)
+    comment: Mapped[str | None] = mapped_column(String(4000), nullable=True)
+    source: Mapped[str] = mapped_column(String(50), default="yummydoors", nullable=False)
+    is_published: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    restaurant: Mapped[Restaurant] = relationship(back_populates="reviews")

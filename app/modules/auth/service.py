@@ -26,6 +26,8 @@ from app.modules.auth.schemas import (
 )
 from app.modules.integrations.pos.lookup import lookup_pos_link_status
 from app.modules.integrations.pos.models import ExternalUserLink
+from app.modules.workspaces.schemas import WorkspaceSummary
+from app.modules.workspaces.service import WorkspaceService
 from app.utils.security import get_password_hash, verify_password
 
 
@@ -76,6 +78,8 @@ class AuthService:
         if customer_role is None:
             raise HTTPException(status_code=500, detail="Base role setup is missing.")
         await self.repo.add_user_role(user.id, customer_role.id)
+        workspace_service = WorkspaceService(self.repo.db)
+        await workspace_service.ensure_customer_workspace(user)
 
         hydrated = await self.repo.get_user_by_id(user.id)
         if hydrated is None:
@@ -133,6 +137,7 @@ class AuthService:
             await self.repo.commit()
             raise HTTPException(status_code=403, detail="Account is inactive.")
 
+        await self._ensure_user_workspace(user)
         user.last_login_at = datetime.now(UTC)
         tokens = await self._issue_tokens(user, request)
         await self._audit(
@@ -210,12 +215,16 @@ class AuthService:
             if customer_role is None:
                 raise HTTPException(status_code=500, detail="Base role setup is missing.")
             await self.repo.add_user_role(user.id, customer_role.id)
+            workspace_service = WorkspaceService(self.repo.db)
+            await workspace_service.ensure_customer_workspace(user)
         else:
             user.full_name = user.full_name or full_name.strip()
             user.avatar_url = picture or user.avatar_url
             user.is_verified = user.is_verified or email_verified
             user.is_active = True
             user.status = UserStatus.active
+            workspace_service = WorkspaceService(self.repo.db)
+            await workspace_service.ensure_customer_workspace(user)
 
         if link is None:
             await self.repo.create_external_user_link(
@@ -271,6 +280,7 @@ class AuthService:
             await self.repo.commit()
             raise HTTPException(status_code=401, detail="User is not available.")
 
+        await self._ensure_user_workspace(user)
         await self.repo.revoke_refresh_session(session)
         tokens = await self._issue_tokens(user, request)
         await self._audit(
@@ -459,6 +469,8 @@ class AuthService:
         return user
 
     async def get_current_user_summary(self, user: User) -> UserSummary:
+        await self._ensure_user_workspace(user)
+        await self.repo.commit()
         return await self._build_user_summary(user)
 
     async def _issue_tokens(self, user: User, request: Request | None) -> AuthTokens:
@@ -507,6 +519,34 @@ class AuthService:
             email=user.email,
             external_links=user.external_links,
         )
+        workspace_summaries: list[WorkspaceSummary] = []
+        for membership in sorted(
+            user.workspace_memberships,
+            key=lambda item: (item.workspace.workspace_type, item.workspace.id),
+        ):
+            if membership.status != "active":
+                continue
+            workspace_summaries.append(
+                WorkspaceSummary(
+                    id=membership.workspace.id,
+                    workspace_type=membership.workspace.workspace_type,
+                    name=membership.workspace.name,
+                    slug=membership.workspace.slug,
+                    status=membership.workspace.status,
+                    membership_role=membership.membership_role,
+                    is_primary=membership.is_primary,
+                    primary_restaurant_id=membership.workspace.primary_restaurant_id,
+                    primary_restaurant_name=(
+                        membership.workspace.primary_restaurant.name
+                        if membership.workspace.primary_restaurant
+                        else None
+                    ),
+                )
+            )
+        active_workspace = next(
+            (workspace for workspace in workspace_summaries if workspace.id == user.active_workspace_id),
+            None,
+        )
         return UserSummary(
             id=user.id,
             full_name=user.full_name,
@@ -525,6 +565,10 @@ class AuthService:
                 for link in user.external_links
             ],
             pos_link_status=pos_link_status,
+            active_restaurant_id=user.active_restaurant_id,
+            active_workspace_id=user.active_workspace_id,
+            active_workspace=active_workspace,
+            workspaces=workspace_summaries,
         )
 
     async def _build_auth_response(self, user: User, tokens: AuthTokens) -> AuthResponse:
@@ -533,6 +577,10 @@ class AuthService:
         if summary.pos_link_status.status not in {"match_found", "linked"}:
             pos_candidates = []
         return AuthResponse(tokens=tokens, user=summary, pos_link_candidates=pos_candidates)
+
+    async def _ensure_user_workspace(self, user: User) -> None:
+        workspace_service = WorkspaceService(self.repo.db)
+        await workspace_service.ensure_customer_workspace(user)
 
     def _generate_reset_code(self) -> str:
         return f"{randbelow(1_000_000):06d}"

@@ -4,6 +4,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, EmailStr, Field, model_validator
 
+from app.modules.workspaces.schemas import WorkspaceSummary
+
 
 class RegisterRequest(BaseModel):
     full_name: str = Field(min_length=2, max_length=255)
@@ -91,6 +93,10 @@ class UserSummary(BaseModel):
     restaurant_ids: list[int]
     external_links: list[dict]
     pos_link_status: PosLinkStatus
+    active_restaurant_id: int | None = None
+    active_workspace_id: int | None = None
+    active_workspace: WorkspaceSummary | None = None
+    workspaces: list[WorkspaceSummary] = []
 
 
 class AuthTokens(BaseModel):
