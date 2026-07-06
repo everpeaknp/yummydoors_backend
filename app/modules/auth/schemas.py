@@ -26,6 +26,10 @@ class LoginRequest(BaseModel):
     password: str = Field(min_length=8, max_length=128)
 
 
+class AdminLoginRequest(LoginRequest):
+    pass
+
+
 class RefreshRequest(BaseModel):
     refresh_token: str
 

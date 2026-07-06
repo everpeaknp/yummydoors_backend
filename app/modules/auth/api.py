@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Request
 
 from app.modules.auth.deps import get_auth_service, get_current_user
 from app.modules.auth.schemas import (
+    AdminLoginRequest,
     AuthResponse,
     ChangePasswordRequest,
     GoogleLoginRequest,
@@ -37,6 +38,16 @@ async def login(
 ):
     result = await service.login(payload, request)
     return ApiResponse(message="Login successful.", data=result)
+
+
+@router.post("/admin/login", response_model=ApiResponse[AuthResponse])
+async def admin_login(
+    payload: AdminLoginRequest,
+    request: Request,
+    service: AuthService = Depends(get_auth_service),
+):
+    result = await service.admin_login(payload, request)
+    return ApiResponse(message="Admin login successful.", data=result)
 
 
 @router.post("/google", response_model=ApiResponse[AuthResponse])

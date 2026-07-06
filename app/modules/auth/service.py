@@ -13,6 +13,7 @@ from app.modules.auth.models import AuthAuditLog, AuthRateLimit, PasswordResetCo
 from app.modules.auth.notifications import send_password_reset_code, smtp_is_configured
 from app.modules.auth.repository import AuthRepository
 from app.modules.auth.schemas import (
+    AdminLoginRequest,
     AuthResponse,
     AuthTokens,
     ChangePasswordRequest,
@@ -96,52 +97,53 @@ class AuthService:
         return await self._build_auth_response(hydrated, tokens)
 
     async def login(self, payload: LoginRequest, request: Request | None = None) -> AuthResponse:
-        normalized_identifier = payload.identifier.strip()
-        await self._enforce_rate_limit(
-            action="login",
-            key=self._compose_rate_limit_key(request, normalized_identifier),
+        normalized_identifier, user = await self._authenticate_login_user(
+            payload=payload,
             request=request,
-            identifier=normalized_identifier,
+            action="login",
         )
-        user = await self.repo.get_user_for_login(normalized_identifier)
-        if user is None or user.password_hash is None:
-            await self._audit(
-                action="login",
-                outcome="failed",
-                identifier=normalized_identifier,
-                request=request,
-                detail={"reason": "invalid_credentials"},
-            )
-            await self.repo.commit()
-            raise HTTPException(status_code=401, detail="Invalid credentials.")
-        if not verify_password(payload.password, user.password_hash):
-            await self._audit(
-                action="login",
-                outcome="failed",
-                identifier=normalized_identifier,
-                user_id=user.id,
-                request=request,
-                detail={"reason": "invalid_credentials"},
-            )
-            await self.repo.commit()
-            raise HTTPException(status_code=401, detail="Invalid credentials.")
-        if not user.is_active:
-            await self._audit(
-                action="login",
-                outcome="failed",
-                identifier=normalized_identifier,
-                user_id=user.id,
-                request=request,
-                detail={"reason": "inactive_account"},
-            )
-            await self.repo.commit()
-            raise HTTPException(status_code=403, detail="Account is inactive.")
 
         await self._ensure_user_workspace(user)
         user.last_login_at = datetime.now(UTC)
         tokens = await self._issue_tokens(user, request)
         await self._audit(
             action="login",
+            outcome="success",
+            identifier=normalized_identifier,
+            user_id=user.id,
+            request=request,
+        )
+        await self.repo.commit()
+        return await self._build_auth_response(user, tokens)
+
+    async def admin_login(
+        self,
+        payload: AdminLoginRequest,
+        request: Request | None = None,
+    ) -> AuthResponse:
+        normalized_identifier, user = await self._authenticate_login_user(
+            payload=payload,
+            request=request,
+            action="admin_login",
+        )
+
+        user_role_codes = {item.role.code for item in user.roles}
+        if "super_admin" not in user_role_codes:
+            await self._audit(
+                action="admin_login",
+                outcome="failed",
+                identifier=normalized_identifier,
+                user_id=user.id,
+                request=request,
+                detail={"reason": "admin_access_required"},
+            )
+            await self.repo.commit()
+            raise HTTPException(status_code=403, detail="This account does not have admin access.")
+
+        user.last_login_at = datetime.now(UTC)
+        tokens = await self._issue_tokens(user, request)
+        await self._audit(
+            action="admin_login",
             outcome="success",
             identifier=normalized_identifier,
             user_id=user.id,
@@ -581,6 +583,54 @@ class AuthService:
     async def _ensure_user_workspace(self, user: User) -> None:
         workspace_service = WorkspaceService(self.repo.db)
         await workspace_service.ensure_customer_workspace(user)
+
+    async def _authenticate_login_user(
+        self,
+        payload: LoginRequest,
+        request: Request | None,
+        action: str,
+    ) -> tuple[str, User]:
+        normalized_identifier = payload.identifier.strip()
+        await self._enforce_rate_limit(
+            action=action,
+            key=self._compose_rate_limit_key(request, normalized_identifier),
+            request=request,
+            identifier=normalized_identifier,
+        )
+        user = await self.repo.get_user_for_login(normalized_identifier)
+        if user is None or user.password_hash is None:
+            await self._audit(
+                action=action,
+                outcome="failed",
+                identifier=normalized_identifier,
+                request=request,
+                detail={"reason": "invalid_credentials"},
+            )
+            await self.repo.commit()
+            raise HTTPException(status_code=401, detail="Invalid credentials.")
+        if not verify_password(payload.password, user.password_hash):
+            await self._audit(
+                action=action,
+                outcome="failed",
+                identifier=normalized_identifier,
+                user_id=user.id,
+                request=request,
+                detail={"reason": "invalid_credentials"},
+            )
+            await self.repo.commit()
+            raise HTTPException(status_code=401, detail="Invalid credentials.")
+        if not user.is_active:
+            await self._audit(
+                action=action,
+                outcome="failed",
+                identifier=normalized_identifier,
+                user_id=user.id,
+                request=request,
+                detail={"reason": "inactive_account"},
+            )
+            await self.repo.commit()
+            raise HTTPException(status_code=403, detail="Account is inactive.")
+        return normalized_identifier, user
 
     def _generate_reset_code(self) -> str:
         return f"{randbelow(1_000_000):06d}"
