@@ -31,7 +31,10 @@ class FavoritesRepository:
         stmt = (
             select(UserFavoriteMenuItem)
             .options(
-                selectinload(UserFavoriteMenuItem.menu_item).selectinload(MenuItem.restaurant),
+                selectinload(UserFavoriteMenuItem.menu_item)
+                .selectinload(MenuItem.restaurant)
+                .selectinload(Restaurant.category_links)
+                .selectinload(RestaurantCategory.category),
                 selectinload(UserFavoriteMenuItem.menu_item).selectinload(MenuItem.category),
             )
             .where(UserFavoriteMenuItem.user_id == user_id)
@@ -84,7 +87,12 @@ class FavoritesRepository:
     async def get_menu_item(self, menu_item_id: int) -> MenuItem | None:
         stmt = (
             select(MenuItem)
-            .options(selectinload(MenuItem.restaurant), selectinload(MenuItem.category))
+            .options(
+                selectinload(MenuItem.restaurant)
+                .selectinload(Restaurant.category_links)
+                .selectinload(RestaurantCategory.category),
+                selectinload(MenuItem.category)
+            )
             .where(MenuItem.id == menu_item_id)
         )
         result = await self.db.execute(stmt)
