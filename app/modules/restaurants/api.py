@@ -210,7 +210,7 @@ async def list_restaurants(
     has_free_delivery: bool | None = Query(default=None),
     featured_only: bool | None = Query(default=None),
     open_now: bool | None = Query(default=None, description="Filter restaurants that are currently open."),
-    sort_by: str | None = Query(default=None, description="Sort by recommended, rating, delivery_time, or highly_reordered."),
+    sort_by: str | None = Query(default=None, description="Sort by recommended, rating, delivery_time, highly_reordered, or distance."),
     latitude: float | None = Query(default=None),
     longitude: float | None = Query(default=None),
     current_user: User | None = Depends(get_current_user_optional),
@@ -233,6 +233,13 @@ async def list_restaurants(
             for restaurant in restaurants
             if _is_open_now(restaurant) is open_now
         ]
+    
+    if sort_by == "distance" and latitude is not None and longitude is not None:
+        restaurants.sort(
+            key=lambda r: _compute_distance_km(
+                restaurant=r, latitude=latitude, longitude=longitude
+            ) or 999999.0
+        )
     favorite_restaurant_ids: set[int] = set()
     if current_user is not None:
         favorite_restaurant_ids = await FavoritesRepository(db).list_favorite_restaurant_ids(current_user.id)

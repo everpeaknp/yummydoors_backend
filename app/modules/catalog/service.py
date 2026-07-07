@@ -1,3 +1,5 @@
+import re
+
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -77,7 +79,15 @@ class CatalogService:
             review_count=restaurant.review_count,
             supports_delivery=restaurant.supports_delivery,
             has_free_delivery=restaurant.has_free_delivery,
+            supports_pickup=restaurant.supports_pickup,
+            supports_table_booking=restaurant.supports_table_booking,
             offer_text=restaurant.offer_text,
+            contact_phone=restaurant.contact_phone,
+            contact_email=restaurant.contact_email,
+            opening_time=restaurant.opening_time,
+            closing_time=restaurant.closing_time,
+            about_text=restaurant.about_text,
+            facilities_text=restaurant.facilities_text,
             delivery_eta_min_minutes=restaurant.delivery_eta_min_minutes,
             delivery_eta_max_minutes=restaurant.delivery_eta_max_minutes,
             sort_rank=restaurant.sort_rank,
@@ -116,8 +126,31 @@ class CatalogService:
         await self.repository.save()
         return await self.get_merchant_restaurant_profile(user, restaurant_id)
 
+    async def _build_unique_category_slug(self, value: str) -> str:
+        return await self._build_unique_slug(value, lookup=self.repository.get_category_by_slug, fallback="category")
+
+    async def _build_unique_menu_item_slug(self, value: str) -> str:
+        return await self._build_unique_slug(value, lookup=self.repository.get_menu_item_by_slug, fallback="item")
+
+    async def _build_unique_slug(self, value: str, *, lookup, fallback: str) -> str:
+        slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-") or fallback
+        candidate = slug
+        counter = 2
+        while await lookup(candidate) is not None:
+            candidate = f"{slug}-{counter}"
+            counter += 1
+        return candidate
+
     async def create_category(self, user: User, restaurant_id: int, data: dict):
         await self._require_managed_restaurant(user, restaurant_id)
+        name = (data.get("name") or "").strip()
+        if not name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Category name is required.",
+            )
+        slug = await self._build_unique_category_slug(name)
+        data = {"name": name, "slug": slug}
         existing = await self.repository.get_category_by_slug(data["slug"])
         if existing is not None:
             raise HTTPException(
@@ -137,12 +170,12 @@ class CatalogService:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Category not found in this restaurant.",
             )
-        if "slug" in data and data["slug"] is not None:
-            existing = await self.repository.get_category_by_slug(data["slug"])
-            if existing is not None and existing.id != category_id:
+        if "name" in data and isinstance(data["name"], str):
+            data["name"] = data["name"].strip()
+            if not data["name"]:
                 raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="A category with this slug already exists.",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Category name cannot be empty.",
                 )
         category = await self.repository.update_category(category_id, data)
         if not category:
@@ -173,6 +206,15 @@ class CatalogService:
 
     async def create_menu_item(self, user: User, restaurant_id: int, data: dict) -> MenuItemSummary:
         await self._require_managed_restaurant(user, restaurant_id)
+        name = (data.get("name") or "").strip()
+        if not name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Menu item name is required.",
+            )
+        data["name"] = name
+        provided_slug = (data.get("slug") or "").strip()
+        data["slug"] = provided_slug or await self._build_unique_menu_item_slug(name)
         category_id = data.get("category_id")
         if category_id is not None and not await self.repository.is_category_linked_to_restaurant(
             restaurant_id, category_id
@@ -197,6 +239,13 @@ class CatalogService:
         item = await self.repository.get_menu_item_by_id(item_id)
         if item is None or item.restaurant_id != restaurant_id:
             return None
+        if "name" in data and isinstance(data["name"], str):
+            data["name"] = data["name"].strip()
+            if not data["name"]:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Menu item name cannot be empty.",
+                )
         category_id = data.get("category_id")
         if category_id is not None and not await self.repository.is_category_linked_to_restaurant(
             restaurant_id, category_id

@@ -5,10 +5,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_db
 from app.modules.auth.deps import get_current_user
 from app.modules.auth.models import User
-from app.modules.orders.schemas import OrderResponse, CheckoutRequest
+from app.modules.orders.schemas import OrderResponse, CheckoutRequest, OrderSummaryRequest, OrderSummaryResponse
 from app.modules.orders.service import OrderService
 
 router = APIRouter(prefix="/orders", tags=["Orders"])
+
+@router.post("/summary", response_model=OrderSummaryResponse)
+async def get_order_summary(
+    summary_request: OrderSummaryRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    service = OrderService(db)
+    return await service.calculate_summary(summary_request)
 
 @router.get("", response_model=List[OrderResponse])
 async def list_my_orders(

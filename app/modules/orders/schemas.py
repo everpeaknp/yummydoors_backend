@@ -67,3 +67,17 @@ class CheckoutRequest(BaseModel):
     needs_cutlery: bool | None = None
     cooking_request: str | None = Field(default=None, max_length=1000)
     delivery_instruction: str | None = Field(default=None, max_length=1000)
+
+class OrderSummaryItemRequest(BaseModel):
+    menu_item_id: int
+    quantity: int = Field(gt=0, default=1)
+    modifier_ids: list[int] = Field(default_factory=list)
+
+class OrderSummaryRequest(BaseModel):
+    restaurant_id: int
+    items: list[OrderSummaryItemRequest]
+    coupon_code: str | None = None
+
+class OrderSummaryResponse(BaseModel):
+    items: list[OrderItemResponse]
+    pricing: OrderPricingBreakdown

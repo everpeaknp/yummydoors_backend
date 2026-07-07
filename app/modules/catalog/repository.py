@@ -115,6 +115,11 @@ class CatalogRepository:
         result = await self.session.execute(stmt)
         return result.scalars().first()
 
+    async def get_restaurant_by_slug(self, slug: str) -> Restaurant | None:
+        stmt = select(Restaurant).where(Restaurant.slug == slug)
+        result = await self.session.execute(stmt)
+        return result.scalars().first()
+
     async def is_category_linked_to_restaurant(self, restaurant_id: int, category_id: int) -> bool:
         stmt = select(RestaurantCategory).where(
             RestaurantCategory.restaurant_id == restaurant_id,

@@ -32,6 +32,14 @@ class CategoryUpdate(BaseModel):
     is_featured: bool | None = None
 
 
+class MerchantCategoryCreate(BaseModel):
+    name: str
+
+
+class MerchantCategoryUpdate(BaseModel):
+    name: str | None = None
+
+
 class RestaurantCardSummary(BaseModel):
     id: int
     slug: str
@@ -169,7 +177,6 @@ class MerchantRestaurantProfileResponse(BaseModel):
 
 class MerchantRestaurantProfileUpdate(BaseModel):
     name: str | None = None
-    slug: str | None = None
     cover_image_url: str | None = None
     logo_url: str | None = None
     short_description: str | None = None
@@ -191,7 +198,6 @@ class MerchantRestaurantProfileUpdate(BaseModel):
     facilities_text: str | None = None
     delivery_eta_min_minutes: int | None = None
     delivery_eta_max_minutes: int | None = None
-    is_featured: bool | None = None
     category_ids: list[int] | None = None
 
 

@@ -17,6 +17,8 @@ from app.modules.orders.schemas import (
     OrderPricingBreakdown,
     OrderResponse,
     OrderTimelineEvent,
+    OrderSummaryRequest,
+    OrderSummaryResponse,
 )
 
 
@@ -232,3 +234,71 @@ class OrderService:
         if not order:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
         return self._format_order_response(order)
+    async def calculate_summary(self, payload: OrderSummaryRequest) -> OrderSummaryResponse:
+        from app.modules.catalog.models import MenuItem, MenuModifierItem
+
+        items_total = 0.0
+        response_items = []
+
+        if payload.items:
+            item_ids = [req_item.menu_item_id for req_item in payload.items]
+            stmt = select(MenuItem).where(MenuItem.id.in_(item_ids))
+            result = await self.session.execute(stmt)
+            menu_items_map = {item.id: item for item in result.scalars().all()}
+
+            all_mod_ids = []
+            for req_item in payload.items:
+                all_mod_ids.extend(req_item.modifier_ids)
+            
+            modifiers_map = {}
+            if all_mod_ids:
+                mod_stmt = select(MenuModifierItem).where(MenuModifierItem.id.in_(all_mod_ids))
+                mod_result = await self.session.execute(mod_stmt)
+                modifiers_map = {mod.id: mod for mod in mod_result.scalars().all()}
+
+            for req_item in payload.items:
+                menu_item = menu_items_map.get(req_item.menu_item_id)
+                if not menu_item:
+                    continue
+
+                item_price = menu_item.price
+                item_name = menu_item.name
+
+                if req_item.modifier_ids:
+                    mod_names = []
+                    for mod_id in req_item.modifier_ids:
+                        mod = modifiers_map.get(mod_id)
+                        if mod:
+                            item_price += mod.price_adjustment
+                            mod_names.append(mod.name)
+                    if mod_names:
+                        item_name += f" ({', '.join(mod_names)})"
+
+                line_total = item_price * req_item.quantity
+                items_total += line_total
+
+                response_items.append(OrderItemResponse(
+                    name=item_name,
+                    price=item_price,
+                    quantity=req_item.quantity
+                ))
+
+        # Basic fixed pricing logic (should ideally come from restaurant or distance)
+        delivery_fee = 100.0 if items_total > 0 else 0.0
+        coupon_discount = 0.0
+        if payload.coupon_code == "DISCOUNT50":
+            coupon_discount = 50.0
+
+        subtotal = max(0, items_total - coupon_discount + delivery_fee)
+
+        pricing = OrderPricingBreakdown(
+            items_total=items_total,
+            coupon_discount=coupon_discount,
+            delivery_fee=delivery_fee,
+            service_fee=0.0,
+            tax_amount=0.0,
+            subtotal_amount=subtotal,
+            total_amount=subtotal,
+        )
+
+        return OrderSummaryResponse(items=response_items, pricing=pricing)

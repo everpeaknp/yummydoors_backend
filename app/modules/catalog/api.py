@@ -7,6 +7,8 @@ from app.db.session import get_db
 from app.modules.auth.deps import get_current_user, get_current_user_optional
 from app.modules.auth.models import User
 from app.modules.catalog.schemas import (
+    MerchantMenuItemCreate,
+    MerchantMenuItemUpdate,
     MenuItemCreate,
     MenuItemResponse,
     MenuItemSummary,
@@ -17,6 +19,8 @@ from app.modules.favorites.repository import FavoritesRepository
 from app.modules.merchandising.schemas import MerchantPromoCreate, MerchantPromoUpdate, PromoBannerResponse
 from app.modules.restaurants.schemas import (
     CategoryCreate,
+    MerchantCategoryCreate,
+    MerchantCategoryUpdate,
     CategorySummary,
     CategoryUpdate,
     MerchantRestaurantProfileResponse,
@@ -91,7 +95,7 @@ async def update_merchant_restaurant_profile_api(
 @router.post("/merchant/restaurants/{restaurant_id}/categories", response_model=ApiResponse[CategorySummary])
 async def create_category_api(
     restaurant_id: int,
-    data: CategoryCreate,
+    data: MerchantCategoryCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -104,7 +108,7 @@ async def create_category_api(
 async def update_category_api(
     restaurant_id: int,
     category_id: int,
-    data: CategoryUpdate,
+    data: MerchantCategoryUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -160,7 +164,7 @@ async def list_restaurant_menu_items_api(
 @router.post("/merchant/restaurants/{restaurant_id}/menu-items", response_model=ApiResponse[MenuItemSummary])
 async def create_menu_item_api(
     restaurant_id: int,
-    data: MenuItemCreate,
+    data: MerchantMenuItemCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -173,7 +177,7 @@ async def create_menu_item_api(
 async def update_menu_item_api(
     restaurant_id: int,
     item_id: int,
-    data: MenuItemUpdate,
+    data: MerchantMenuItemUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
