@@ -107,3 +107,7 @@ app.include_router(reservations_router, prefix=settings.api_v1_prefix)
 @app.get("/health")
 async def health() -> dict:
     return {"status": "ok", "service": settings.app_name}
+
+@app.get("/version")
+async def get_version() -> dict:
+    return {"version": "v-CORS-fix-1"}
