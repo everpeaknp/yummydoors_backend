@@ -129,26 +129,31 @@ async def favorite_menu_item(
     current_user: User = Depends(get_current_user),
     repo: FavoritesRepository = Depends(get_favorites_repository),
 ):
-    menu_item = await repo.get_menu_item(menu_item_id)
-    if menu_item is None or menu_item.restaurant is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Menu item not found.")
+    try:
+        menu_item = await repo.get_menu_item(menu_item_id)
+        if menu_item is None or menu_item.restaurant is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Menu item not found.")
 
-    existing = await repo.get_menu_item_favorite(current_user.id, menu_item_id)
-    favorite = existing or await repo.add_menu_item_favorite(current_user.id, menu_item_id)
-    if existing is not None:
-        await repo.db.refresh(existing)
+        existing = await repo.get_menu_item_favorite(current_user.id, menu_item_id)
+        favorite = existing or await repo.add_menu_item_favorite(current_user.id, menu_item_id)
+        if existing is not None:
+            await repo.db.refresh(existing)
 
-    data = FavoriteMenuItemResponse(
-        id=favorite.id,
-        created_at=favorite.created_at.isoformat() if favorite.created_at else "",
-        menu_item=MenuItemSummary.model_validate(menu_item),
-        restaurant=build_restaurant_summary_with_context(
-            restaurant=menu_item.restaurant,
-            latitude=None,
-            longitude=None,
-        ),
-    )
-    return ApiResponse(message="Menu item saved to favorites.", data=data)
+        data = FavoriteMenuItemResponse(
+            id=favorite.id,
+            created_at=favorite.created_at.isoformat() if favorite.created_at else "",
+            menu_item=MenuItemSummary.model_validate(menu_item),
+            restaurant=build_restaurant_summary_with_context(
+                restaurant=menu_item.restaurant,
+                latitude=None,
+                longitude=None,
+            ),
+        )
+        return ApiResponse(message="Menu item saved to favorites.", data=data)
+    except Exception as e:
+        import traceback
+        error_detail = traceback.format_exc()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error_detail)
 
 
 @router.delete(

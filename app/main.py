@@ -110,4 +110,4 @@ async def health() -> dict:
 
 @app.get("/version")
 async def get_version() -> dict:
-    return {"version": "v-CORS-fix-1"}
+    return {"version": "v-diag-1"}
