@@ -85,8 +85,6 @@ async def favorite_restaurant(
 
     existing = await repo.get_restaurant_favorite(current_user.id, restaurant_id)
     favorite = existing or await repo.add_restaurant_favorite(current_user.id, restaurant_id)
-    if existing is not None:
-        await repo.db.refresh(existing)
 
     data = FavoriteRestaurantResponse(
         id=favorite.id,
@@ -112,7 +110,7 @@ async def unfavorite_restaurant(
 ):
     favorite = await repo.get_restaurant_favorite(current_user.id, restaurant_id)
     if favorite is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Favorite not found.")
+        return ApiResponse(message="Restaurant was already removed from favorites.", data={"restaurant_id": restaurant_id})
 
     await repo.delete_restaurant_favorite(favorite)
     return ApiResponse(message="Restaurant removed from favorites.", data={"restaurant_id": restaurant_id})
@@ -129,31 +127,24 @@ async def favorite_menu_item(
     current_user: User = Depends(get_current_user),
     repo: FavoritesRepository = Depends(get_favorites_repository),
 ):
-    try:
-        menu_item = await repo.get_menu_item(menu_item_id)
-        if menu_item is None or menu_item.restaurant is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Menu item not found.")
+    menu_item = await repo.get_menu_item(menu_item_id)
+    if menu_item is None or menu_item.restaurant is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Menu item not found.")
 
-        existing = await repo.get_menu_item_favorite(current_user.id, menu_item_id)
-        favorite = existing or await repo.add_menu_item_favorite(current_user.id, menu_item_id)
-        if existing is not None:
-            await repo.db.refresh(existing)
+    existing = await repo.get_menu_item_favorite(current_user.id, menu_item_id)
+    favorite = existing or await repo.add_menu_item_favorite(current_user.id, menu_item_id)
 
-        data = FavoriteMenuItemResponse(
-            id=favorite.id,
-            created_at=favorite.created_at.isoformat() if favorite.created_at else "",
-            menu_item=MenuItemSummary.model_validate(menu_item),
-            restaurant=build_restaurant_summary_with_context(
-                restaurant=menu_item.restaurant,
-                latitude=None,
-                longitude=None,
-            ),
+    data = FavoriteMenuItemResponse(
+        id=favorite.id,
+        created_at=favorite.created_at.isoformat() if favorite.created_at else "",
+        menu_item=MenuItemSummary.model_validate(menu_item),
+        restaurant=build_restaurant_summary_with_context(
+            restaurant=menu_item.restaurant,
+            latitude=None,
+            longitude=None,
         )
-        return ApiResponse(message="Menu item saved to favorites.", data=data)
-    except Exception:
-        import traceback
-        error_detail = traceback.format_exc()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error_detail)
+    )
+    return ApiResponse(message="Menu item saved to favorites.", data=data)
 
 
 @router.delete(
@@ -168,7 +159,7 @@ async def unfavorite_menu_item(
 ):
     favorite = await repo.get_menu_item_favorite(current_user.id, menu_item_id)
     if favorite is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Favorite not found.")
+        return ApiResponse(message="Menu item was already removed from favorites.", data={"menu_item_id": menu_item_id})
 
     await repo.delete_menu_item_favorite(favorite)
     return ApiResponse(message="Menu item removed from favorites.", data={"menu_item_id": menu_item_id})
