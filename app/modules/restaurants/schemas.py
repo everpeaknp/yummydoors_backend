@@ -64,6 +64,8 @@ class RestaurantCardSummary(BaseModel):
     opening_time: str | None = None
     closing_time: str | None = None
     is_open_now: bool | None = None
+    latitude: float | None = None
+    longitude: float | None = None
     distance_km: float | None = None
     is_featured: bool
     is_favorited: bool = False

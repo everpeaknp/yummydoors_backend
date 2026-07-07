@@ -139,6 +139,8 @@ def build_restaurant_summary_with_context(
         offer_text=restaurant.offer_text,
         contact_phone=restaurant.contact_phone,
         contact_email=restaurant.contact_email,
+        latitude=restaurant.latitude,
+        longitude=restaurant.longitude,
         delivery_eta_min_minutes=restaurant.delivery_eta_min_minutes,
         delivery_eta_max_minutes=restaurant.delivery_eta_max_minutes,
         opening_time=restaurant.opening_time,
