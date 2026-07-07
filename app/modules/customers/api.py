@@ -1,5 +1,5 @@
 from typing import List
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, File, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
@@ -34,6 +34,25 @@ async def update_my_profile(
 ):
     service = CustomerService(db)
     return await service.update_profile(current_user.id, update_data)
+
+
+@router.post("/profile/avatar", response_model=CustomerProfileResponse)
+async def upload_my_avatar(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    service = CustomerService(db)
+    return await service.upload_avatar(current_user.id, file)
+
+
+@router.delete("/account", status_code=status.HTTP_200_OK)
+async def delete_my_account(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    service = CustomerService(db)
+    return await service.soft_delete_account(current_user.id)
 
 
 @router.get("/addresses", response_model=List[CustomerAddressResponse])

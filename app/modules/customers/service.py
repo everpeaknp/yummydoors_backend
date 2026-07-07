@@ -1,5 +1,5 @@
 from typing import Sequence
-from fastapi import HTTPException, status
+from fastapi import HTTPException, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.customers.repository import CustomerRepository
@@ -8,10 +8,34 @@ from app.modules.customers.schemas import (
     CustomerAddressUpdate,
     CustomerProfileUpdate,
     CustomerProfileResponse,
-    CustomerAddressResponse
+    CustomerAddressResponse,
+    PhoneCountryResponse,
 )
 from app.modules.auth.models import User
 from app.modules.customers.models import CustomerAddress
+from app.services.cloudinary_service import CloudinaryService
+
+
+COUNTRY_BY_DIAL_CODE: dict[str, PhoneCountryResponse] = {
+    "+977": PhoneCountryResponse(
+        iso2="NP",
+        name="Nepal",
+        dial_code="+977",
+        flag_emoji="🇳🇵",
+    ),
+    "+91": PhoneCountryResponse(
+        iso2="IN",
+        name="India",
+        dial_code="+91",
+        flag_emoji="🇮🇳",
+    ),
+    "+1": PhoneCountryResponse(
+        iso2="US",
+        name="United States",
+        dial_code="+1",
+        flag_emoji="🇺🇸",
+    ),
+}
 
 
 class CustomerService:
@@ -74,6 +98,67 @@ class CustomerService:
             address_summary=cls._build_address_summary(address),
         )
 
+    @staticmethod
+    def _clean_phone_part(value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = "".join(char for char in value.strip() if char.isdigit() or char == "+")
+        return cleaned or None
+
+    @classmethod
+    def _compose_phone(cls, country_code: str | None, national_number: str | None) -> str | None:
+        clean_country_code = cls._clean_phone_part(country_code)
+        clean_national_number = cls._clean_phone_part(national_number)
+        if clean_national_number:
+            clean_national_number = clean_national_number.lstrip("+")
+        if not clean_country_code and not clean_national_number:
+            return None
+        if not clean_country_code or not clean_country_code.startswith("+"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Phone country code must start with '+'.",
+            )
+        if not clean_national_number:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Phone national number is required when country code is provided.",
+            )
+        return f"{clean_country_code}{clean_national_number}"
+
+    @classmethod
+    def _parse_phone_metadata(cls, phone: str | None) -> dict:
+        clean_phone = cls._clean_phone_part(phone)
+        if not clean_phone:
+            return {
+                "phone_country_code": None,
+                "phone_national_number": None,
+                "phone_display": None,
+                "phone_is_present": False,
+                "phone_can_edit": True,
+                "phone_country": None,
+            }
+
+        for dial_code in sorted(COUNTRY_BY_DIAL_CODE, key=len, reverse=True):
+            if clean_phone.startswith(dial_code):
+                national_number = clean_phone[len(dial_code):]
+                return {
+                    "phone_country_code": dial_code,
+                    "phone_national_number": national_number,
+                    "phone_display": f"{dial_code} {national_number}" if national_number else dial_code,
+                    "phone_is_present": True,
+                    "phone_can_edit": True,
+                    "phone_country": COUNTRY_BY_DIAL_CODE[dial_code],
+                }
+
+        return {
+            "phone_country_code": None,
+            "phone_national_number": clean_phone.lstrip("+"),
+            "phone_display": clean_phone,
+            "phone_is_present": True,
+            "phone_can_edit": True,
+            "phone_country": None,
+        }
+
     def _build_profile_response(self, user: User) -> CustomerProfileResponse:
         default_address = None
         active_addresses = [address for address in user.addresses if address.is_active]
@@ -82,11 +167,13 @@ class CustomerService:
                 (address for address in active_addresses if address.id == user.default_address_id),
                 None,
             )
+        phone_metadata = self._parse_phone_metadata(user.phone)
 
         return CustomerProfileResponse(
             id=user.id,
             email=user.email,
             phone=user.phone,
+            **phone_metadata,
             full_name=user.full_name,
             avatar_url=user.avatar_url,
             status=user.status,
@@ -115,6 +202,11 @@ class CustomerService:
         if not update_dict:
             return await self.get_profile(user_id)
 
+        phone_country_code = update_dict.pop("phone_country_code", None)
+        phone_national_number = update_dict.pop("phone_national_number", None)
+        if phone_country_code is not None or phone_national_number is not None:
+            update_dict["phone"] = self._compose_phone(phone_country_code, phone_national_number)
+
         if "email" in update_dict and update_dict["email"] is not None:
             update_dict["email"] = update_dict["email"].strip().lower()
             existing = await self.repository.get_user_by_email(update_dict["email"])
@@ -137,6 +229,20 @@ class CustomerService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
         return await self.get_profile(user_id)
+
+    async def upload_avatar(self, user_id: int, file: UploadFile) -> CustomerProfileResponse:
+        avatar_url = await CloudinaryService.upload_image(file, "customers/avatars")
+        user = await self.repository.update_user_profile(user_id, {"avatar_url": avatar_url})
+        if not user:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        return await self.get_profile(user_id)
+
+    async def soft_delete_account(self, user_id: int) -> dict:
+        await self.repository.revoke_refresh_sessions(user_id)
+        user = await self.repository.soft_delete_user(user_id)
+        if not user:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        return {"success": True}
 
     async def list_addresses(self, user_id: int) -> Sequence[CustomerAddressResponse]:
         user = await self.repository.get_user_profile(user_id)

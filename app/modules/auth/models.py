@@ -21,6 +21,7 @@ class UserStatus(StrEnum):
     pending = "pending"
     active = "active"
     suspended = "suspended"
+    deleted = "deleted"
 
 
 class User(Base, TimestampMixin):
@@ -36,6 +37,7 @@ class User(Base, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     default_address_id: Mapped[int | None] = mapped_column(ForeignKey("customer_addresses.id", ondelete="SET NULL", use_alter=True), nullable=True)
     active_restaurant_id: Mapped[int | None] = mapped_column(
         ForeignKey("restaurants.id", ondelete="SET NULL", use_alter=True),

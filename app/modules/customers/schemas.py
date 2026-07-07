@@ -57,14 +57,29 @@ class CustomerProfileUpdate(BaseModel):
     full_name: Optional[str] = Field(None, max_length=255)
     email: Optional[EmailStr] = None
     phone: Optional[str] = Field(None, max_length=32)
+    phone_country_code: Optional[str] = Field(None, max_length=10)
+    phone_national_number: Optional[str] = Field(None, max_length=32)
     avatar_url: Optional[str] = Field(None, max_length=500)
     default_address_id: Optional[int] = None
+
+
+class PhoneCountryResponse(BaseModel):
+    iso2: str
+    name: str
+    dial_code: str
+    flag_emoji: str
 
 
 class CustomerProfileResponse(BaseModel):
     id: int
     email: Optional[EmailStr]
     phone: Optional[str]
+    phone_country_code: Optional[str] = None
+    phone_national_number: Optional[str] = None
+    phone_display: Optional[str] = None
+    phone_is_present: bool = False
+    phone_can_edit: bool = True
+    phone_country: Optional[PhoneCountryResponse] = None
     full_name: str
     avatar_url: Optional[str]
     status: str

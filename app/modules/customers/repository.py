@@ -1,10 +1,12 @@
 from typing import Sequence
+from datetime import UTC, datetime
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.modules.customers.models import CustomerAddress
-from app.modules.auth.models import User
+from app.modules.auth.models import RefreshSession, User, UserStatus
 
 
 class CustomerRepository:
@@ -28,6 +30,33 @@ class CustomerRepository:
         for key, value in update_data.items():
             setattr(user, key, value)
             
+        self.session.add(user)
+        await self.session.commit()
+        await self.session.refresh(user)
+        return user
+
+    async def revoke_refresh_sessions(self, user_id: int) -> None:
+        result = await self.session.execute(
+            select(RefreshSession).where(
+                RefreshSession.user_id == user_id,
+                RefreshSession.revoked_at.is_(None),
+            )
+        )
+        now = datetime.now(UTC)
+        for session in result.scalars():
+            session.revoked_at = now
+            session.is_current = False
+
+    async def soft_delete_user(self, user_id: int) -> User | None:
+        user = await self.get_user_profile(user_id)
+        if not user:
+            return None
+
+        user.is_active = False
+        user.status = UserStatus.deleted
+        user.deleted_at = datetime.now(UTC)
+        user.active_restaurant_id = None
+        user.active_workspace_id = None
         self.session.add(user)
         await self.session.commit()
         await self.session.refresh(user)
