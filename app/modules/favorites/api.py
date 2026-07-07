@@ -90,7 +90,7 @@ async def favorite_restaurant(
 
     data = FavoriteRestaurantResponse(
         id=favorite.id,
-        created_at=favorite.created_at.isoformat(),
+        created_at=favorite.created_at.isoformat() if favorite.created_at else "",
         restaurant=build_restaurant_summary_with_context(
             restaurant=restaurant,
             latitude=None,
@@ -140,7 +140,7 @@ async def favorite_menu_item(
 
     data = FavoriteMenuItemResponse(
         id=favorite.id,
-        created_at=favorite.created_at.isoformat(),
+        created_at=favorite.created_at.isoformat() if favorite.created_at else "",
         menu_item=MenuItemSummary.model_validate(menu_item),
         restaurant=build_restaurant_summary_with_context(
             restaurant=menu_item.restaurant,
