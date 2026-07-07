@@ -136,7 +136,7 @@ class CustomerService:
         if not user:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
-        return self._build_profile_response(user)
+        return await self.get_profile(user_id)
 
     async def list_addresses(self, user_id: int) -> Sequence[CustomerAddressResponse]:
         user = await self.repository.get_user_profile(user_id)

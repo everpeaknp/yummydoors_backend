@@ -11,6 +11,7 @@ class CloudinaryService:
     def _configure_cloudinary():
         try:
             import cloudinary
+            import cloudinary.uploader
         except ModuleNotFoundError as exc:
             raise HTTPException(
                 status_code=500,
@@ -33,7 +34,7 @@ class CloudinaryService:
             api_secret=api_secret,
             secure=True,
         )
-        return cloudinary
+        return cloudinary.uploader
 
     @staticmethod
     async def upload_image(file: UploadFile, folder_name: str) -> str:
@@ -44,7 +45,7 @@ class CloudinaryService:
         if not file.content_type.startswith("image/"):
             raise HTTPException(status_code=400, detail="File must be an image")
 
-        cloudinary = CloudinaryService._configure_cloudinary()
+        uploader = CloudinaryService._configure_cloudinary()
 
         # Read file content safely
         content = await file.read()
@@ -59,7 +60,7 @@ class CloudinaryService:
             original_name = file.filename or "upload"
             unique_filename = f"{uuid.uuid4().hex[:8]}_{original_name.replace(' ', '_')}"
 
-            response = cloudinary.uploader.upload(
+            response = uploader.upload(
                 content,
                 folder=full_folder_path,
                 public_id=unique_filename,
