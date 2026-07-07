@@ -58,6 +58,7 @@ class RestaurantCardSummary(BaseModel):
     is_open_now: bool | None = None
     distance_km: float | None = None
     is_featured: bool
+    is_favorited: bool = False
     categories: list[CategorySummary] = []
 
 
@@ -81,11 +82,31 @@ class RestaurantReviewSummary(BaseModel):
 
 class RestaurantReviewResponse(BaseModel):
     id: int
+    user_id: int | None = None
     author_name: str
     rating: float
     comment: str | None = None
     source: str
     created_at: str
+    is_mine: bool = False
+    can_edit: bool = False
+
+
+class RestaurantReviewCreate(BaseModel):
+    rating: float
+    comment: str | None = None
+
+
+class RestaurantReviewUpdate(BaseModel):
+    rating: float | None = None
+    comment: str | None = None
+
+
+class RestaurantReviewEligibilityResponse(BaseModel):
+    can_create_review: bool
+    requires_delivered_order: bool = True
+    existing_review_id: int | None = None
+    reason: str | None = None
 
 
 class RestaurantDetailResponse(BaseModel):
@@ -98,6 +119,8 @@ class RestaurantDetailResponse(BaseModel):
     facilities: list[str] = []
     reviews_summary: RestaurantReviewSummary | None = None
     reviews: list[RestaurantReviewResponse] = []
+    viewer_review: RestaurantReviewResponse | None = None
+    review_eligibility: RestaurantReviewEligibilityResponse | None = None
 
 
 class RestaurantSearchMatch(BaseModel):

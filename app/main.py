@@ -9,6 +9,7 @@ from app.modules.admin.api import router as admin_router
 from app.modules.auth.api import router as auth_router
 from app.modules.catalog.api import router as catalog_router
 from app.modules.customers.api import router as customer_router
+from app.modules.favorites.api import router as favorites_router
 from app.modules.merchandising.api import router as merchandising_router
 from app.modules.reservations.api import router as reservations_router
 from app.modules.restaurants.api import router as restaurant_router
@@ -33,6 +34,10 @@ OPENAPI_TAGS = [
     {
         "name": "Customers",
         "description": "Authenticated customer profile and saved-address management endpoints.",
+    },
+    {
+        "name": "Favorites",
+        "description": "Customer wishlist and saved favorite restaurants or menu items.",
     },
     {
         "name": "Catalog",
@@ -90,6 +95,7 @@ app.include_router(auth_router, prefix=settings.api_v1_prefix)
 app.include_router(admin_router, prefix=settings.api_v1_prefix)
 app.include_router(restaurant_router, prefix=settings.api_v1_prefix)
 app.include_router(customer_router, prefix=settings.api_v1_prefix)
+app.include_router(favorites_router, prefix=settings.api_v1_prefix)
 app.include_router(catalog_router, prefix=settings.api_v1_prefix)
 app.include_router(merchandising_router, prefix=settings.api_v1_prefix)
 app.include_router(workspace_router, prefix=settings.api_v1_prefix)

@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.modules.catalog.models import FoodType, MenuItem
+from app.modules.orders.models import Order, OrderStatus
 from app.modules.restaurants.models import Category, Restaurant, RestaurantCategory, RestaurantReview
 
 
@@ -177,3 +178,105 @@ class RestaurantRepository:
         )
         result = await self.db.execute(stmt)
         return list(result.scalars().all())
+
+    async def get_review_by_id(self, restaurant_id: int, review_id: int) -> RestaurantReview | None:
+        stmt = select(RestaurantReview).where(
+            and_(
+                RestaurantReview.restaurant_id == restaurant_id,
+                RestaurantReview.id == review_id,
+            )
+        )
+        result = await self.db.execute(stmt)
+        return result.scalars().first()
+
+    async def get_review_by_user(self, restaurant_id: int, user_id: int) -> RestaurantReview | None:
+        stmt = select(RestaurantReview).where(
+            and_(
+                RestaurantReview.restaurant_id == restaurant_id,
+                RestaurantReview.user_id == user_id,
+            )
+        )
+        result = await self.db.execute(stmt)
+        return result.scalars().first()
+
+    async def has_delivered_order(self, restaurant_id: int, user_id: int) -> bool:
+        stmt = (
+            select(Order.id)
+            .where(
+                and_(
+                    Order.restaurant_id == restaurant_id,
+                    Order.customer_id == user_id,
+                    Order.status == OrderStatus.delivered,
+                )
+            )
+            .limit(1)
+        )
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none() is not None
+
+    async def create_review(
+        self,
+        *,
+        restaurant_id: int,
+        user_id: int,
+        author_name: str,
+        rating: float,
+        comment: str | None,
+    ) -> RestaurantReview:
+        review = RestaurantReview(
+            restaurant_id=restaurant_id,
+            user_id=user_id,
+            author_name=author_name,
+            rating=rating,
+            comment=comment,
+            source="yummydoors",
+            is_published=True,
+        )
+        self.db.add(review)
+        await self.db.commit()
+        await self.db.refresh(review)
+        return review
+
+    async def update_review(
+        self,
+        review: RestaurantReview,
+        *,
+        rating: float | None,
+        comment: str | None,
+    ) -> RestaurantReview:
+        if rating is not None:
+            review.rating = rating
+        if comment is not None:
+            review.comment = comment
+        review.is_published = True
+        await self.db.commit()
+        await self.db.refresh(review)
+        return review
+
+    async def delete_review(self, review: RestaurantReview) -> None:
+        await self.db.delete(review)
+        await self.db.commit()
+
+    async def sync_review_stats(self, restaurant_id: int) -> None:
+        stats_stmt = select(
+            func.count(RestaurantReview.id),
+            func.coalesce(func.avg(RestaurantReview.rating), 0.0),
+        ).where(
+            and_(
+                RestaurantReview.restaurant_id == restaurant_id,
+                RestaurantReview.is_published.is_(True),
+            )
+        )
+        count_value, average_value = (await self.db.execute(stats_stmt)).one()
+
+        restaurant = await self.get_restaurant_by_id(restaurant_id)
+        if restaurant is None:
+            return
+
+        restaurant.review_count = int(count_value or 0)
+        restaurant.rating_average = round(float(average_value or 0.0), 2)
+        await self.db.commit()
+
+    async def get_restaurant_by_id(self, restaurant_id: int) -> Restaurant | None:
+        result = await self.db.execute(self._restaurant_query().where(Restaurant.id == restaurant_id))
+        return result.scalars().unique().first()

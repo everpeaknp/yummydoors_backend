@@ -14,6 +14,7 @@ from app.modules.catalog.repository import CatalogRepository
 from app.modules.catalog.schemas import MenuItemSummary
 from app.modules.catalog.service import CatalogService
 from app.modules.customers.service import CustomerService
+from app.modules.favorites.repository import FavoritesRepository
 from app.modules.merchandising.models import PromoPlacement
 from app.modules.merchandising.service import MerchandisingService
 from app.modules.restaurants.models import Category, Restaurant
@@ -24,8 +25,11 @@ from app.modules.restaurants.schemas import (
     HomeLocationContext,
     RestaurantDetailResponse,
     RestaurantMenuSection,
+    RestaurantReviewCreate,
     RestaurantReviewResponse,
     RestaurantReviewSummary,
+    RestaurantReviewEligibilityResponse,
+    RestaurantReviewUpdate,
     RestaurantCardSummary,
     RestaurantListResponse,
     RestaurantSearchMatch,
@@ -150,6 +154,44 @@ def build_restaurant_summary_with_context(
     )
 
 
+def build_review_response(
+    review,
+    *,
+    current_user_id: int | None,
+) -> RestaurantReviewResponse:
+    is_mine = current_user_id is not None and review.user_id == current_user_id
+    return RestaurantReviewResponse(
+        id=review.id,
+        user_id=review.user_id,
+        author_name=review.author_name,
+        rating=review.rating,
+        comment=review.comment,
+        source=review.source,
+        created_at=review.created_at.isoformat(),
+        is_mine=is_mine,
+        can_edit=is_mine,
+    )
+
+
+def build_review_eligibility(
+    *,
+    has_delivered_order: bool,
+    existing_review_id: int | None,
+) -> RestaurantReviewEligibilityResponse:
+    if existing_review_id is not None:
+        return RestaurantReviewEligibilityResponse(
+            can_create_review=False,
+            existing_review_id=existing_review_id,
+            reason="You already reviewed this restaurant. Edit your existing review instead.",
+        )
+    if not has_delivered_order:
+        return RestaurantReviewEligibilityResponse(
+            can_create_review=False,
+            reason="Only customers with delivered orders can review this restaurant.",
+        )
+    return RestaurantReviewEligibilityResponse(can_create_review=True)
+
+
 @router.get(
     "/restaurants",
     response_model=ApiResponse[RestaurantListResponse],
@@ -171,7 +213,9 @@ async def list_restaurants(
     sort_by: str | None = Query(default=None, description="Sort by recommended, rating, delivery_time, or highly_reordered."),
     latitude: float | None = Query(default=None),
     longitude: float | None = Query(default=None),
+    current_user: User | None = Depends(get_current_user_optional),
     repo: RestaurantRepository = Depends(get_restaurant_repository),
+    db=Depends(get_db),
 ):
     restaurants = await repo.list_restaurants(
         search=q,
@@ -189,6 +233,9 @@ async def list_restaurants(
             for restaurant in restaurants
             if _is_open_now(restaurant) is open_now
         ]
+    favorite_restaurant_ids: set[int] = set()
+    if current_user is not None:
+        favorite_restaurant_ids = await FavoritesRepository(db).list_favorite_restaurant_ids(current_user.id)
     total = len(restaurants)
     data = RestaurantListResponse(
         items=[
@@ -196,7 +243,7 @@ async def list_restaurants(
                 restaurant=restaurant,
                 latitude=latitude,
                 longitude=longitude,
-            )
+            ).model_copy(update={"is_favorited": restaurant.id in favorite_restaurant_ids})
             for restaurant in restaurants
         ],
         total=total,
@@ -220,6 +267,7 @@ async def get_restaurant_detail(
     slug: str,
     latitude: float | None = Query(default=None),
     longitude: float | None = Query(default=None),
+    current_user: User | None = Depends(get_current_user_optional),
     repo: RestaurantRepository = Depends(get_restaurant_repository),
     db=Depends(get_db),
 ):
@@ -233,6 +281,25 @@ async def get_restaurant_detail(
     popular_items = await catalog_repo.list_popular_items_by_restaurant(restaurant.id)
     related_restaurants = await repo.list_related_restaurants(restaurant)
     reviews = await repo.list_reviews(restaurant.id)
+    favorite_restaurant_ids: set[int] = set()
+    favorite_menu_item_ids: set[int] = set()
+    viewer_review = None
+    review_eligibility = None
+    if current_user is not None:
+        favorites_repo = FavoritesRepository(db)
+        favorite_restaurant_ids = await favorites_repo.list_favorite_restaurant_ids(current_user.id)
+        favorite_menu_item_ids = await favorites_repo.list_favorite_menu_item_ids(current_user.id)
+        viewer_review_model = await repo.get_review_by_user(restaurant.id, current_user.id)
+        has_delivered_order = await repo.has_delivered_order(restaurant.id, current_user.id)
+        viewer_review = (
+            build_review_response(viewer_review_model, current_user_id=current_user.id)
+            if viewer_review_model is not None
+            else None
+        )
+        review_eligibility = build_review_eligibility(
+            has_delivered_order=has_delivered_order,
+            existing_review_id=viewer_review_model.id if viewer_review_model is not None else None,
+        )
 
     grouped_sections: OrderedDict[tuple[int | None, str | None, str], list[MenuItemSummary]] = OrderedDict()
     for item in menu_items:
@@ -242,7 +309,11 @@ async def get_restaurant_detail(
             category.slug if category else None,
             category.name if category else "More from this restaurant",
         )
-        grouped_sections.setdefault(key, []).append(MenuItemSummary.model_validate(item))
+        grouped_sections.setdefault(key, []).append(
+            MenuItemSummary.model_validate(item).model_copy(
+                update={"is_favorited": item.id in favorite_menu_item_ids}
+            )
+        )
 
     menu_sections = [
         RestaurantMenuSection(
@@ -259,16 +330,26 @@ async def get_restaurant_detail(
             restaurant=restaurant,
             latitude=latitude,
             longitude=longitude,
-        ),
+        ).model_copy(update={"is_favorited": restaurant.id in favorite_restaurant_ids}),
         menu_sections=menu_sections,
-        featured_items=[MenuItemSummary.model_validate(item) for item in featured_items],
-        popular_items=[MenuItemSummary.model_validate(item) for item in popular_items],
+        featured_items=[
+            MenuItemSummary.model_validate(item).model_copy(
+                update={"is_favorited": item.id in favorite_menu_item_ids}
+            )
+            for item in featured_items
+        ],
+        popular_items=[
+            MenuItemSummary.model_validate(item).model_copy(
+                update={"is_favorited": item.id in favorite_menu_item_ids}
+            )
+            for item in popular_items
+        ],
         related_restaurants=[
             build_restaurant_summary_with_context(
                 restaurant=item,
                 latitude=latitude,
                 longitude=longitude,
-            )
+            ).model_copy(update={"is_favorited": item.id in favorite_restaurant_ids})
             for item in related_restaurants
         ],
         about_text=restaurant.about_text,
@@ -278,17 +359,9 @@ async def get_restaurant_detail(
             total_reviews=restaurant.review_count,
             highlights=[review.comment for review in reviews[:3] if review.comment],
         ),
-        reviews=[
-            RestaurantReviewResponse(
-                id=review.id,
-                author_name=review.author_name,
-                rating=review.rating,
-                comment=review.comment,
-                source=review.source,
-                created_at=review.created_at.isoformat(),
-            )
-            for review in reviews
-        ],
+        reviews=[build_review_response(review, current_user_id=current_user.id if current_user else None) for review in reviews],
+        viewer_review=viewer_review,
+        review_eligibility=review_eligibility,
     )
     return ApiResponse(message="Restaurant detail fetched successfully.", data=data)
 
@@ -302,9 +375,17 @@ async def search_restaurants(
     q: str = Query(..., min_length=1, description="Search text for restaurants or menu items."),
     latitude: float | None = Query(default=None),
     longitude: float | None = Query(default=None),
+    current_user: User | None = Depends(get_current_user_optional),
     repo: RestaurantRepository = Depends(get_restaurant_repository),
+    db=Depends(get_db),
 ):
     matches = await repo.search_restaurants(query=q)
+    favorite_restaurant_ids: set[int] = set()
+    favorite_menu_item_ids: set[int] = set()
+    if current_user is not None:
+        favorites_repo = FavoritesRepository(db)
+        favorite_restaurant_ids = await favorites_repo.list_favorite_restaurant_ids(current_user.id)
+        favorite_menu_item_ids = await favorites_repo.list_favorite_menu_item_ids(current_user.id)
     data = RestaurantSearchResponse(
         items=[
             RestaurantSearchMatch(
@@ -312,8 +393,13 @@ async def search_restaurants(
                     restaurant=restaurant,
                     latitude=latitude,
                     longitude=longitude,
-                ),
-                matched_menu_items=[MenuItemSummary.model_validate(item) for item in matched_items],
+                ).model_copy(update={"is_favorited": restaurant.id in favorite_restaurant_ids}),
+                matched_menu_items=[
+                    MenuItemSummary.model_validate(item).model_copy(
+                        update={"is_favorited": item.id in favorite_menu_item_ids}
+                    )
+                    for item in matched_items
+                ],
             )
             for restaurant, matched_items in matches
         ],
@@ -329,6 +415,7 @@ async def search_restaurants(
 )
 async def list_restaurant_reviews(
     slug: str,
+    current_user: User | None = Depends(get_current_user_optional),
     repo: RestaurantRepository = Depends(get_restaurant_repository),
 ):
     restaurant = await repo.get_restaurant_by_slug(slug)
@@ -336,18 +423,141 @@ async def list_restaurant_reviews(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Restaurant not found.")
 
     reviews = await repo.list_reviews(restaurant.id)
-    data = [
-        RestaurantReviewResponse(
-            id=review.id,
-            author_name=review.author_name,
-            rating=review.rating,
-            comment=review.comment,
-            source=review.source,
-            created_at=review.created_at.isoformat(),
-        )
-        for review in reviews
-    ]
+    data = [build_review_response(review, current_user_id=current_user.id if current_user else None) for review in reviews]
     return ApiResponse(message="Restaurant reviews fetched successfully.", data=data)
+
+
+@router.get(
+    "/restaurants/{slug}/review-eligibility",
+    response_model=ApiResponse[RestaurantReviewEligibilityResponse],
+    summary="Check whether the current customer can write a review",
+)
+async def get_restaurant_review_eligibility(
+    slug: str,
+    current_user: User | None = Depends(get_current_user_optional),
+    repo: RestaurantRepository = Depends(get_restaurant_repository),
+):
+    if current_user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required.")
+
+    restaurant = await repo.get_restaurant_by_slug(slug)
+    if restaurant is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Restaurant not found.")
+
+    existing_review = await repo.get_review_by_user(restaurant.id, current_user.id)
+    has_delivered_order = await repo.has_delivered_order(restaurant.id, current_user.id)
+    data = build_review_eligibility(
+        has_delivered_order=has_delivered_order,
+        existing_review_id=existing_review.id if existing_review is not None else None,
+    )
+    return ApiResponse(message="Review eligibility fetched successfully.", data=data)
+
+
+@router.post(
+    "/restaurants/{slug}/reviews",
+    response_model=ApiResponse[RestaurantReviewResponse],
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a restaurant review",
+)
+async def create_restaurant_review(
+    slug: str,
+    payload: RestaurantReviewCreate,
+    current_user: User | None = Depends(get_current_user_optional),
+    repo: RestaurantRepository = Depends(get_restaurant_repository),
+):
+    if current_user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required.")
+    if payload.rating < 1 or payload.rating > 5:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Rating must be between 1 and 5.")
+
+    restaurant = await repo.get_restaurant_by_slug(slug)
+    if restaurant is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Restaurant not found.")
+
+    existing_review = await repo.get_review_by_user(restaurant.id, current_user.id)
+    if existing_review is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="You already reviewed this restaurant. Edit your existing review instead.",
+        )
+    if not await repo.has_delivered_order(restaurant.id, current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only customers with delivered orders can review this restaurant.",
+        )
+
+    review = await repo.create_review(
+        restaurant_id=restaurant.id,
+        user_id=current_user.id,
+        author_name=current_user.full_name,
+        rating=payload.rating,
+        comment=payload.comment.strip() if payload.comment else None,
+    )
+    await repo.sync_review_stats(restaurant.id)
+    data = build_review_response(review, current_user_id=current_user.id)
+    return ApiResponse(message="Review created successfully.", data=data)
+
+
+@router.patch(
+    "/restaurants/{slug}/reviews/{review_id}",
+    response_model=ApiResponse[RestaurantReviewResponse],
+    summary="Edit my restaurant review",
+)
+async def update_restaurant_review(
+    slug: str,
+    review_id: int,
+    payload: RestaurantReviewUpdate,
+    current_user: User | None = Depends(get_current_user_optional),
+    repo: RestaurantRepository = Depends(get_restaurant_repository),
+):
+    if current_user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required.")
+    if payload.rating is not None and not 1 <= payload.rating <= 5:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Rating must be between 1 and 5.")
+
+    restaurant = await repo.get_restaurant_by_slug(slug)
+    if restaurant is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Restaurant not found.")
+
+    review = await repo.get_review_by_id(restaurant.id, review_id)
+    if review is None or review.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Review not found.")
+
+    updated = await repo.update_review(
+        review,
+        rating=payload.rating,
+        comment=payload.comment.strip() if payload.comment is not None else None,
+    )
+    await repo.sync_review_stats(restaurant.id)
+    data = build_review_response(updated, current_user_id=current_user.id)
+    return ApiResponse(message="Review updated successfully.", data=data)
+
+
+@router.delete(
+    "/restaurants/{slug}/reviews/{review_id}",
+    response_model=ApiResponse[dict],
+    summary="Delete my restaurant review",
+)
+async def delete_restaurant_review(
+    slug: str,
+    review_id: int,
+    current_user: User | None = Depends(get_current_user_optional),
+    repo: RestaurantRepository = Depends(get_restaurant_repository),
+):
+    if current_user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required.")
+
+    restaurant = await repo.get_restaurant_by_slug(slug)
+    if restaurant is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Restaurant not found.")
+
+    review = await repo.get_review_by_id(restaurant.id, review_id)
+    if review is None or review.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Review not found.")
+
+    await repo.delete_review(review)
+    await repo.sync_review_stats(restaurant.id)
+    return ApiResponse(message="Review deleted successfully.", data={"review_id": review_id})
 
 @router.get(
     "/home/feed",

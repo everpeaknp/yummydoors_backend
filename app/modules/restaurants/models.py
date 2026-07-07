@@ -145,6 +145,11 @@ class RestaurantReview(Base, TimestampMixin):
     restaurant_id: Mapped[int] = mapped_column(
         ForeignKey("restaurants.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     author_name: Mapped[str] = mapped_column(String(255), nullable=False)
     rating: Mapped[float] = mapped_column(Float, nullable=False)
     comment: Mapped[str | None] = mapped_column(String(4000), nullable=True)
@@ -152,3 +157,8 @@ class RestaurantReview(Base, TimestampMixin):
     is_published: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     restaurant: Mapped[Restaurant] = relationship(back_populates="reviews")
+    user: Mapped["User | None"] = relationship(foreign_keys=[user_id])
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "restaurant_id", name="uq_restaurant_reviews_user_restaurant"),
+    )

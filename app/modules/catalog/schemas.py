@@ -65,6 +65,7 @@ class MenuItemBase(BaseModel):
     popularity_score: int = 0
     rating_average: float = 0.0
     rating_count: int = 0
+    is_favorited: bool = False
 
 class MenuItemResponse(MenuItemBase):
     id: int

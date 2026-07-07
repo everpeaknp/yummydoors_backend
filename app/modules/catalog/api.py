@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
-from app.modules.auth.deps import get_current_user
+from app.modules.auth.deps import get_current_user, get_current_user_optional
 from app.modules.auth.models import User
 from app.modules.catalog.schemas import (
     MenuItemCreate,
@@ -13,6 +13,7 @@ from app.modules.catalog.schemas import (
     MenuItemUpdate,
 )
 from app.modules.catalog.service import CatalogService
+from app.modules.favorites.repository import FavoritesRepository
 from app.modules.merchandising.schemas import MerchantPromoCreate, MerchantPromoUpdate, PromoBannerResponse
 from app.modules.restaurants.schemas import (
     CategoryCreate,
@@ -29,23 +30,34 @@ router = APIRouter(tags=["Catalog"])
 @router.get("/restaurants/{restaurant_id}/menu", response_model=ApiResponse[List[MenuItemResponse]])
 async def get_restaurant_menu(
     restaurant_id: int,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(get_current_user_optional),
 ):
     service = CatalogService(db)
     items = await service.get_restaurant_menu(restaurant_id)
+    favorite_menu_item_ids: set[int] = set()
+    if current_user is not None:
+        favorite_menu_item_ids = await FavoritesRepository(db).list_favorite_menu_item_ids(current_user.id)
+    items = [
+        item.model_copy(update={"is_favorited": item.id in favorite_menu_item_ids})
+        for item in items
+    ]
     return ApiResponse(message="Menu fetched successfully.", data=items)
 
 
 @router.get("/menu-items/{slug}", response_model=ApiResponse[MenuItemResponse])
 async def get_menu_item(
     slug: str,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(get_current_user_optional),
 ):
     service = CatalogService(db)
     item = await service.get_menu_item_by_slug(slug)
     if not item:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Menu item not found")
-        
+    if current_user is not None:
+        favorite_menu_item_ids = await FavoritesRepository(db).list_favorite_menu_item_ids(current_user.id)
+        item = item.model_copy(update={"is_favorited": item.id in favorite_menu_item_ids})
     return ApiResponse(message="Menu item fetched successfully.", data=item)
 
 @router.get(
