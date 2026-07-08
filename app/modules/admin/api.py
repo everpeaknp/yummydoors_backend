@@ -2,31 +2,19 @@ from __future__ import annotations
 
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Query
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.db.session import get_db
-from app.modules.auth.deps import require_role
-from app.modules.auth.models import User
-from app.services.cloudinary_service import CloudinaryService
-from app.modules.catalog.models import MenuItem
-from app.modules.merchandising.models import PromoBanner
-from app.modules.reservations.models import ReservationStatus
-from app.modules.reservations.schemas import (
-    ReservationResponse,
-    ReservationStatusUpdateRequest,
-    RestaurantTableCreateRequest,
-    RestaurantTableSummary,
-    RestaurantTableUpdateRequest,
-)
-from app.modules.reservations.service import ReservationService
-from app.modules.restaurants.models import Category, Restaurant, RestaurantCategory
 from app.modules.admin.schemas import (
     AdminCategoryCreate,
     AdminCategoryResponse,
     AdminCategoryUpdate,
+    AdminFeaturedVideoCreate,
+    AdminFeaturedVideoResponse,
+    AdminFeaturedVideoUpdate,
     AdminMenuItemCreate,
     AdminMenuItemResponse,
     AdminMenuItemUpdate,
@@ -37,7 +25,23 @@ from app.modules.admin.schemas import (
     AdminRestaurantResponse,
     AdminRestaurantUpdate,
 )
+from app.modules.auth.deps import require_role
+from app.modules.auth.models import User
+from app.modules.catalog.models import MenuItem
+from app.modules.merchandising.models import PromoBanner
+from app.modules.merchandising.service import MerchandisingService
+from app.modules.reservations.models import ReservationStatus
+from app.modules.reservations.schemas import (
+    ReservationResponse,
+    ReservationStatusUpdateRequest,
+    RestaurantTableCreateRequest,
+    RestaurantTableSummary,
+    RestaurantTableUpdateRequest,
+)
+from app.modules.reservations.service import ReservationService
+from app.modules.restaurants.models import Category, Restaurant, RestaurantCategory
 from app.schemas.common import ApiResponse
+from app.services.cloudinary_service import CloudinaryService
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
@@ -150,11 +154,10 @@ async def _replace_restaurant_categories(
     dependencies=[Depends(require_role(["super_admin"]))],
 )
 async def list_categories(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Category).order_by(Category.sort_order.asc(), Category.id.asc()))
-    items = [
-        _build_category_response(category)
-        for category in result.scalars().all()
-    ]
+    result = await db.execute(
+        select(Category).order_by(Category.sort_order.asc(), Category.id.asc())
+    )
+    items = [_build_category_response(category) for category in result.scalars().all()]
     return ApiResponse(message="Admin categories fetched successfully.", data=items)
 
 
@@ -214,7 +217,9 @@ async def delete_category(category_id: int, db: AsyncSession = Depends(get_db)):
 )
 async def list_admin_restaurants(db: AsyncSession = Depends(get_db)):
     result = await db.execute(_restaurant_query().order_by(Restaurant.id.desc()))
-    items = [_build_restaurant_response(restaurant) for restaurant in result.scalars().unique().all()]
+    items = [
+        _build_restaurant_response(restaurant) for restaurant in result.scalars().unique().all()
+    ]
     return ApiResponse(message="Admin restaurants fetched successfully.", data=items)
 
 
@@ -352,7 +357,9 @@ async def delete_menu_item(menu_item_id: int, db: AsyncSession = Depends(get_db)
     dependencies=[Depends(require_role(["super_admin"]))],
 )
 async def list_admin_promos(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(PromoBanner).order_by(PromoBanner.sort_order.asc(), PromoBanner.id.desc()))
+    result = await db.execute(
+        select(PromoBanner).order_by(PromoBanner.sort_order.asc(), PromoBanner.id.desc())
+    )
     items = [AdminPromoResponse.model_validate(item) for item in result.scalars().all()]
     return ApiResponse(message="Admin promos fetched successfully.", data=items)
 
@@ -464,7 +471,9 @@ async def delete_admin_reservation_table(
 ):
     service = ReservationService(db)
     await service.delete_merchant_table(current_user, restaurant_id, table_id)
-    return ApiResponse(message="Admin reservation table deleted successfully.", data={"success": True})
+    return ApiResponse(
+        message="Admin reservation table deleted successfully.", data={"success": True}
+    )
 
 
 @router.get(
@@ -529,12 +538,81 @@ async def update_admin_reservation_status(
     response_model=ApiResponse[dict],
     dependencies=[Depends(require_role(["super_admin"]))],
 )
-async def upload_admin_file(
-    file: UploadFile = File(...),
-    folder: str = Form("general")
-):
+async def upload_admin_file(file: UploadFile = File(...), folder: str = Form("general")):
     try:
         url = await CloudinaryService.upload_image(file, folder)
         return ApiResponse(message="File uploaded successfully.", data={"url": url})
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Featured Videos ──────────────────────────────────────────────────────────
+
+
+@router.get(
+    "/featured-videos",
+    response_model=ApiResponse[list[AdminFeaturedVideoResponse]],
+    summary="List all featured videos",
+)
+async def list_featured_videos(
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role(["super_admin", "ops_admin"])),
+):
+    service = MerchandisingService(db)
+    videos = await service.list_all_featured_videos()
+    return ApiResponse(message="Featured videos fetched.", data=videos)
+
+
+@router.post(
+    "/featured-videos",
+    response_model=ApiResponse[AdminFeaturedVideoResponse],
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a featured video",
+)
+async def create_featured_video(
+    payload: AdminFeaturedVideoCreate,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role(["super_admin", "ops_admin"])),
+):
+    service = MerchandisingService(db)
+    video = await service.create_featured_video(payload.model_dump())
+    return ApiResponse(message="Featured video created.", data=video)
+
+
+@router.patch(
+    "/featured-videos/{video_id}",
+    response_model=ApiResponse[AdminFeaturedVideoResponse],
+    summary="Update a featured video",
+)
+async def update_featured_video(
+    video_id: int,
+    payload: AdminFeaturedVideoUpdate,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role(["super_admin", "ops_admin"])),
+):
+    service = MerchandisingService(db)
+    video = await service.update_featured_video(video_id, payload.model_dump(exclude_unset=True))
+    if video is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Featured video not found."
+        )
+    return ApiResponse(message="Featured video updated.", data=video)
+
+
+@router.delete(
+    "/featured-videos/{video_id}",
+    response_model=ApiResponse,
+    summary="Delete a featured video",
+)
+async def delete_featured_video(
+    video_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role(["super_admin", "ops_admin"])),
+):
+    service = MerchandisingService(db)
+    ok = await service.delete_featured_video(video_id)
+    if not ok:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Featured video not found."
+        )
+    return ApiResponse(message="Featured video deleted.", data=None)

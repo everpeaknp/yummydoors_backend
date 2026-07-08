@@ -1,7 +1,10 @@
-from typing import Optional
 from datetime import datetime
+from typing import Optional
+
 from pydantic import BaseModel, ConfigDict, Field
+
 from app.modules.merchandising.models import PromoPlacement, PromoTargetType
+
 
 class PromoBannerBase(BaseModel):
     title: str
@@ -14,6 +17,7 @@ class PromoBannerBase(BaseModel):
     target_url: Optional[str] = None
     cta_text: Optional[str] = None
     sort_order: int = 0
+
 
 class PromoBannerResponse(PromoBannerBase):
     id: int
@@ -29,7 +33,6 @@ class MerchantPromoCreate(BaseModel):
     subtitle: str | None = Field(default=None, max_length=255)
     image_url: str = Field(..., max_length=500)
     image_url_mobile: str | None = Field(default=None, max_length=500)
-    placement: PromoPlacement
     target_url: str | None = Field(default=None, max_length=500)
     cta_text: str | None = Field(default=None, max_length=100)
     sort_order: int = 0
@@ -43,10 +46,21 @@ class MerchantPromoUpdate(BaseModel):
     subtitle: str | None = Field(default=None, max_length=255)
     image_url: str | None = Field(default=None, max_length=500)
     image_url_mobile: str | None = Field(default=None, max_length=500)
-    placement: PromoPlacement | None = None
     target_url: str | None = Field(default=None, max_length=500)
     cta_text: str | None = Field(default=None, max_length=100)
     sort_order: int | None = None
     is_active: bool | None = None
     start_at: datetime | None = None
     end_at: datetime | None = None
+
+
+class FeaturedVideoResponse(BaseModel):
+    id: int
+    title: str
+    subtitle: str | None = None
+    thumbnail_url: str | None = None
+    video_url: str
+    is_active: bool = True
+    sort_order: int = 0
+
+    model_config = ConfigDict(from_attributes=True)

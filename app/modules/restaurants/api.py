@@ -23,15 +23,15 @@ from app.modules.restaurants.schemas import (
     CategorySummary,
     HomeFeedResponse,
     HomeLocationContext,
+    RestaurantCardSummary,
     RestaurantDetailResponse,
+    RestaurantListResponse,
     RestaurantMenuSection,
     RestaurantReviewCreate,
+    RestaurantReviewEligibilityResponse,
     RestaurantReviewResponse,
     RestaurantReviewSummary,
-    RestaurantReviewEligibilityResponse,
     RestaurantReviewUpdate,
-    RestaurantCardSummary,
-    RestaurantListResponse,
     RestaurantSearchMatch,
     RestaurantSearchResponse,
 )
@@ -56,7 +56,9 @@ def build_category_summary(category: Category) -> CategorySummary:
 
 
 def build_restaurant_summary(restaurant: Restaurant) -> RestaurantCardSummary:
-    return build_restaurant_summary_with_context(restaurant=restaurant, latitude=None, longitude=None)
+    return build_restaurant_summary_with_context(
+        restaurant=restaurant, latitude=None, longitude=None
+    )
 
 
 def _compute_distance_km(
@@ -206,13 +208,20 @@ def build_review_eligibility(
 async def list_restaurants(
     q: str | None = Query(default=None, description="Search restaurants and menu items by text."),
     category_slug: str | None = Query(default=None, description="Filter by category slug."),
-    food_type: FoodType | None = Query(default=None, description="Filter menu-bearing restaurants by food type."),
+    food_type: FoodType | None = Query(
+        default=None, description="Filter menu-bearing restaurants by food type."
+    ),
     supports_delivery: bool | None = Query(default=None),
     supports_pickup: bool | None = Query(default=None),
     has_free_delivery: bool | None = Query(default=None),
     featured_only: bool | None = Query(default=None),
-    open_now: bool | None = Query(default=None, description="Filter restaurants that are currently open."),
-    sort_by: str | None = Query(default=None, description="Sort by recommended, rating, delivery_time, highly_reordered, or distance."),
+    open_now: bool | None = Query(
+        default=None, description="Filter restaurants that are currently open."
+    ),
+    sort_by: str | None = Query(
+        default=None,
+        description="Sort by recommended, rating, delivery_time, highly_reordered, or distance.",
+    ),
     latitude: float | None = Query(default=None),
     longitude: float | None = Query(default=None),
     current_user: User | None = Depends(get_current_user_optional),
@@ -231,20 +240,21 @@ async def list_restaurants(
     )
     if open_now is not None:
         restaurants = [
-            restaurant
-            for restaurant in restaurants
-            if _is_open_now(restaurant) is open_now
+            restaurant for restaurant in restaurants if _is_open_now(restaurant) is open_now
         ]
-    
+
     if sort_by == "distance" and latitude is not None and longitude is not None:
         restaurants.sort(
-            key=lambda r: _compute_distance_km(
-                restaurant=r, latitude=latitude, longitude=longitude
-            ) or 999999.0
+            key=lambda r: (
+                _compute_distance_km(restaurant=r, latitude=latitude, longitude=longitude)
+                or 999999.0
+            )
         )
     favorite_restaurant_ids: set[int] = set()
     if current_user is not None:
-        favorite_restaurant_ids = await FavoritesRepository(db).list_favorite_restaurant_ids(current_user.id)
+        favorite_restaurant_ids = await FavoritesRepository(db).list_favorite_restaurant_ids(
+            current_user.id
+        )
     total = len(restaurants)
     data = RestaurantListResponse(
         items=[
@@ -310,7 +320,9 @@ async def get_restaurant_detail(
             existing_review_id=viewer_review_model.id if viewer_review_model is not None else None,
         )
 
-    grouped_sections: OrderedDict[tuple[int | None, str | None, str], list[MenuItemSummary]] = OrderedDict()
+    grouped_sections: OrderedDict[tuple[int | None, str | None, str], list[MenuItemSummary]] = (
+        OrderedDict()
+    )
     for item in menu_items:
         category = item.category
         key = (
@@ -368,7 +380,10 @@ async def get_restaurant_detail(
             total_reviews=restaurant.review_count,
             highlights=[review.comment for review in reviews[:3] if review.comment],
         ),
-        reviews=[build_review_response(review, current_user_id=current_user.id if current_user else None) for review in reviews],
+        reviews=[
+            build_review_response(review, current_user_id=current_user.id if current_user else None)
+            for review in reviews
+        ],
         viewer_review=viewer_review,
         review_eligibility=review_eligibility,
     )
@@ -432,7 +447,10 @@ async def list_restaurant_reviews(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Restaurant not found.")
 
     reviews = await repo.list_reviews(restaurant.id)
-    data = [build_review_response(review, current_user_id=current_user.id if current_user else None) for review in reviews]
+    data = [
+        build_review_response(review, current_user_id=current_user.id if current_user else None)
+        for review in reviews
+    ]
     return ApiResponse(message="Restaurant reviews fetched successfully.", data=data)
 
 
@@ -447,7 +465,9 @@ async def get_restaurant_review_eligibility(
     repo: RestaurantRepository = Depends(get_restaurant_repository),
 ):
     if current_user is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required.")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required."
+        )
 
     restaurant = await repo.get_restaurant_by_slug(slug)
     if restaurant is None:
@@ -475,9 +495,13 @@ async def create_restaurant_review(
     repo: RestaurantRepository = Depends(get_restaurant_repository),
 ):
     if current_user is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required.")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required."
+        )
     if payload.rating < 1 or payload.rating > 5:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Rating must be between 1 and 5.")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Rating must be between 1 and 5."
+        )
 
     restaurant = await repo.get_restaurant_by_slug(slug)
     if restaurant is None:
@@ -520,9 +544,13 @@ async def update_restaurant_review(
     repo: RestaurantRepository = Depends(get_restaurant_repository),
 ):
     if current_user is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required.")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required."
+        )
     if payload.rating is not None and not 1 <= payload.rating <= 5:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Rating must be between 1 and 5.")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Rating must be between 1 and 5."
+        )
 
     restaurant = await repo.get_restaurant_by_slug(slug)
     if restaurant is None:
@@ -554,7 +582,9 @@ async def delete_restaurant_review(
     repo: RestaurantRepository = Depends(get_restaurant_repository),
 ):
     if current_user is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required.")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required."
+        )
 
     restaurant = await repo.get_restaurant_by_slug(slug)
     if restaurant is None:
@@ -567,6 +597,7 @@ async def delete_restaurant_review(
     await repo.delete_review(review)
     await repo.sync_review_stats(restaurant.id)
     return ApiResponse(message="Review deleted successfully.", data={"review_id": review_id})
+
 
 @router.get(
     "/home/feed",
@@ -614,16 +645,32 @@ async def get_home_feed(
         location_subtitle = "Delivering to your area"
 
     catalog_service = CatalogService(db)
-    raw_recommended = await catalog_service.repository.list_featured_items(limit=8)
     raw_popular = await catalog_service.repository.list_popular_items(limit=8)
-    
-    recommended_items = [MenuItemSummary.model_validate(item) for item in raw_recommended]
     popular_foods = [MenuItemSummary.model_validate(item) for item in raw_popular]
-    
+
+    # Recommended for you: pull items from favorited restaurants; fall back to featured items
+    if current_user is not None:
+        fav_repo = FavoritesRepository(db)
+        fav_restaurant_ids = list(await fav_repo.list_favorite_restaurant_ids(current_user.id))
+        if fav_restaurant_ids:
+            raw_recommended = await catalog_service.repository.list_items_by_restaurants(
+                fav_restaurant_ids, limit=8
+            )
+        else:
+            raw_recommended = await catalog_service.repository.list_featured_items(limit=8)
+    else:
+        raw_recommended = await catalog_service.repository.list_featured_items(limit=8)
+    recommended_items = [MenuItemSummary.model_validate(item) for item in raw_recommended]
+
     merch_service = MerchandisingService(db)
-    hero_promos = await merch_service.list_active_promos(PromoPlacement.home_carousel)
-    banner_promos = await merch_service.list_active_promos(PromoPlacement.home_banner)
+    hero_promos = await merch_service.list_active_promos(
+        PromoPlacement.home_carousel, global_only=True
+    )
+    banner_promos = await merch_service.list_active_promos(
+        PromoPlacement.home_banner, global_only=True
+    )
     promos = hero_promos if hero_promos else banner_promos
+    featured_videos = await merch_service.list_active_featured_videos(limit=8)
 
     data = HomeFeedResponse(
         location_context=HomeLocationContext(
@@ -640,5 +687,6 @@ async def get_home_feed(
         banner_promos=banner_promos,
         recommended_items=recommended_items,
         popular_foods=popular_foods,
+        featured_videos=featured_videos,
     )
     return ApiResponse(message="Home feed fetched successfully.", data=data)

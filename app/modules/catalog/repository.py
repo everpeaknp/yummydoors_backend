@@ -1,4 +1,5 @@
 from typing import Sequence
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -23,10 +24,40 @@ class CatalogRepository:
         return result.scalars().all()
 
     async def list_popular_items(self, limit: int = 10) -> Sequence[MenuItem]:
+        from sqlalchemy import or_
+
         stmt = (
             select(MenuItem)
-            .where(MenuItem.is_available == True, MenuItem.is_popular == True)
-            .order_by(MenuItem.popularity_score.desc(), MenuItem.id.desc())
+            .where(
+                MenuItem.is_available == True,
+                or_(MenuItem.is_popular == True, MenuItem.favorite_count > 0),
+            )
+            .order_by(
+                MenuItem.favorite_count.desc(),
+                MenuItem.is_popular.desc(),
+                MenuItem.popularity_score.desc(),
+                MenuItem.id.desc(),
+            )
+            .limit(limit)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalars().all()
+
+    async def list_items_by_restaurants(
+        self, restaurant_ids: list[int], limit: int = 8
+    ) -> Sequence[MenuItem]:
+        stmt = (
+            select(MenuItem)
+            .where(
+                MenuItem.restaurant_id.in_(restaurant_ids),
+                MenuItem.is_available == True,
+            )
+            .order_by(
+                MenuItem.favorite_count.desc(),
+                MenuItem.is_featured.desc(),
+                MenuItem.popularity_score.desc(),
+                MenuItem.id.desc(),
+            )
             .limit(limit)
         )
         result = await self.session.execute(stmt)
@@ -37,7 +68,7 @@ class CatalogRepository:
             select(MenuItem)
             .options(
                 selectinload(MenuItem.category),
-                selectinload(MenuItem.modifier_groups).selectinload(MenuModifierGroup.items)
+                selectinload(MenuItem.modifier_groups).selectinload(MenuModifierGroup.items),
             )
             .where(MenuItem.restaurant_id == restaurant_id)
             .order_by(MenuItem.category_id, MenuItem.popularity_score.desc(), MenuItem.id.desc())
@@ -157,7 +188,9 @@ class CatalogRepository:
     async def refresh(self, instance) -> None:
         await self.session.refresh(instance)
 
-    async def null_menu_item_category_for_restaurant(self, restaurant_id: int, category_id: int) -> None:
+    async def null_menu_item_category_for_restaurant(
+        self, restaurant_id: int, category_id: int
+    ) -> None:
         stmt = select(MenuItem).where(
             MenuItem.restaurant_id == restaurant_id,
             MenuItem.category_id == category_id,

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -44,16 +44,22 @@ class FavoritesRepository:
         return list(result.scalars().unique().all())
 
     async def list_favorite_restaurant_ids(self, user_id: int) -> set[int]:
-        stmt = select(UserFavoriteRestaurant.restaurant_id).where(UserFavoriteRestaurant.user_id == user_id)
+        stmt = select(UserFavoriteRestaurant.restaurant_id).where(
+            UserFavoriteRestaurant.user_id == user_id
+        )
         result = await self.db.execute(stmt)
         return {restaurant_id for restaurant_id in result.scalars().all()}
 
     async def list_favorite_menu_item_ids(self, user_id: int) -> set[int]:
-        stmt = select(UserFavoriteMenuItem.menu_item_id).where(UserFavoriteMenuItem.user_id == user_id)
+        stmt = select(UserFavoriteMenuItem.menu_item_id).where(
+            UserFavoriteMenuItem.user_id == user_id
+        )
         result = await self.db.execute(stmt)
         return {menu_item_id for menu_item_id in result.scalars().all()}
 
-    async def get_restaurant_favorite(self, user_id: int, restaurant_id: int) -> UserFavoriteRestaurant | None:
+    async def get_restaurant_favorite(
+        self, user_id: int, restaurant_id: int
+    ) -> UserFavoriteRestaurant | None:
         stmt = select(UserFavoriteRestaurant).where(
             and_(
                 UserFavoriteRestaurant.user_id == user_id,
@@ -63,7 +69,9 @@ class FavoritesRepository:
         result = await self.db.execute(stmt)
         return result.scalars().first()
 
-    async def get_menu_item_favorite(self, user_id: int, menu_item_id: int) -> UserFavoriteMenuItem | None:
+    async def get_menu_item_favorite(
+        self, user_id: int, menu_item_id: int
+    ) -> UserFavoriteMenuItem | None:
         stmt = select(UserFavoriteMenuItem).where(
             and_(
                 UserFavoriteMenuItem.user_id == user_id,
@@ -91,14 +99,16 @@ class FavoritesRepository:
                 selectinload(MenuItem.restaurant)
                 .selectinload(Restaurant.category_links)
                 .selectinload(RestaurantCategory.category),
-                selectinload(MenuItem.category)
+                selectinload(MenuItem.category),
             )
             .where(MenuItem.id == menu_item_id)
         )
         result = await self.db.execute(stmt)
         return result.scalars().first()
 
-    async def add_restaurant_favorite(self, user_id: int, restaurant_id: int) -> UserFavoriteRestaurant:
+    async def add_restaurant_favorite(
+        self, user_id: int, restaurant_id: int
+    ) -> UserFavoriteRestaurant:
         favorite = UserFavoriteRestaurant(user_id=user_id, restaurant_id=restaurant_id)
         self.db.add(favorite)
         await self.db.commit()
@@ -108,6 +118,12 @@ class FavoritesRepository:
     async def add_menu_item_favorite(self, user_id: int, menu_item_id: int) -> UserFavoriteMenuItem:
         favorite = UserFavoriteMenuItem(user_id=user_id, menu_item_id=menu_item_id)
         self.db.add(favorite)
+        await self.db.flush()
+        await self.db.execute(
+            update(MenuItem)
+            .where(MenuItem.id == menu_item_id)
+            .values(favorite_count=MenuItem.favorite_count + 1)
+        )
         await self.db.commit()
         await self.db.refresh(favorite)
         return favorite
@@ -117,5 +133,11 @@ class FavoritesRepository:
         await self.db.commit()
 
     async def delete_menu_item_favorite(self, favorite: UserFavoriteMenuItem) -> None:
+        menu_item_id = favorite.menu_item_id
         await self.db.delete(favorite)
+        await self.db.execute(
+            update(MenuItem)
+            .where(MenuItem.id == menu_item_id, MenuItem.favorite_count > 0)
+            .values(favorite_count=MenuItem.favorite_count - 1)
+        )
         await self.db.commit()

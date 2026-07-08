@@ -206,3 +206,33 @@ class AdminPromoResponse(AdminPromoBase):
     id: int
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class AdminFeaturedVideoCreate(BaseModel):
+    title: str = Field(..., max_length=255)
+    subtitle: str | None = Field(default=None, max_length=500)
+    thumbnail_url: str | None = Field(default=None, max_length=500)
+    video_url: str = Field(..., max_length=500)
+    is_active: bool = True
+    sort_order: int = 0
+
+
+class AdminFeaturedVideoUpdate(BaseModel):
+    title: str | None = Field(default=None, max_length=255)
+    subtitle: str | None = Field(default=None, max_length=500)
+    thumbnail_url: str | None = Field(default=None, max_length=500)
+    video_url: str | None = Field(default=None, max_length=500)
+    is_active: bool | None = None
+    sort_order: int | None = None
+
+
+class AdminFeaturedVideoResponse(BaseModel):
+    id: int
+    title: str
+    subtitle: str | None = None
+    thumbnail_url: str | None = None
+    video_url: str
+    is_active: bool
+    sort_order: int
+
+    model_config = ConfigDict(from_attributes=True)

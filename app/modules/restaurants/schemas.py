@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict
+
 from app.modules.catalog.schemas import MenuItemSummary
-from app.modules.merchandising.schemas import PromoBannerResponse
+from app.modules.merchandising.schemas import FeaturedVideoResponse, PromoBannerResponse
 
 
 class CategorySummary(BaseModel):
@@ -220,3 +221,4 @@ class HomeFeedResponse(BaseModel):
     banner_promos: list[PromoBannerResponse] = []
     recommended_items: list[MenuItemSummary] = []
     popular_foods: list[MenuItemSummary] = []
+    featured_videos: list[FeaturedVideoResponse] = []
