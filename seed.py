@@ -59,7 +59,7 @@ async def seed_data():
                 slug="mario-pizza", name="Mario's Pizza", cover_image_url="https://example.com/rest1_cover.jpg",
                 logo_url="https://example.com/rest1_logo.jpg", short_description="Best wood-fired pizza in town",
                 primary_cuisine_label="Italian", city="Pokhara", rating_average=4.5, review_count=120,
-                has_free_delivery=True, is_featured=True
+                has_free_delivery=True, is_featured=True, latitude=28.2100, longitude=83.9860
             )
             db.add(rest1)
             
@@ -69,7 +69,7 @@ async def seed_data():
                 slug="burger-hub", name="The Burger Hub", cover_image_url="https://example.com/rest2_cover.jpg",
                 logo_url="https://example.com/rest2_logo.jpg", short_description="Juicy smash burgers",
                 primary_cuisine_label="American", city="Pokhara", rating_average=4.2, review_count=85,
-                is_featured=False
+                is_featured=False, latitude=28.2080, longitude=83.9850
             )
             db.add(rest2)
             
