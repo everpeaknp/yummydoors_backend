@@ -1,11 +1,12 @@
 from typing import Sequence
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.modules.catalog.models import MenuItem, MenuModifierGroup
 from app.modules.merchandising.models import PromoBanner, PromoTargetType
+from app.modules.orders.models import Order, OrderItem, OrderStatus
 from app.modules.restaurants.models import Category, Restaurant, RestaurantCategory
 
 
@@ -24,7 +25,29 @@ class CatalogRepository:
         return result.scalars().all()
 
     async def list_popular_items(self, limit: int = 10) -> Sequence[MenuItem]:
+        sales_quantity = func.sum(OrderItem.quantity).label("sales_quantity")
         stmt = (
+            select(MenuItem)
+            .join(OrderItem, OrderItem.menu_item_id == MenuItem.id)
+            .join(Order, Order.id == OrderItem.order_id)
+            .where(MenuItem.is_available == True)
+            .where(Order.status == OrderStatus.delivered)
+            .group_by(MenuItem.id)
+            .order_by(
+                sales_quantity.desc(),
+                MenuItem.favorite_count.desc(),
+                MenuItem.popularity_score.desc(),
+                MenuItem.is_popular.desc(),
+                MenuItem.id.desc(),
+            )
+            .limit(limit)
+        )
+        result = await self.session.execute(stmt)
+        items = result.scalars().all()
+        if items:
+            return items
+
+        fallback_stmt = (
             select(MenuItem)
             .where(MenuItem.is_available == True)
             .order_by(
@@ -35,8 +58,8 @@ class CatalogRepository:
             )
             .limit(limit)
         )
-        result = await self.session.execute(stmt)
-        return result.scalars().all()
+        fallback_result = await self.session.execute(fallback_stmt)
+        return fallback_result.scalars().all()
 
     async def list_items_by_restaurants(
         self, restaurant_ids: list[int], limit: int = 8

@@ -214,11 +214,21 @@ class HomeLocationContext(BaseModel):
     longitude: float | None = None
 
 
+class HomeFeedFilterOption(BaseModel):
+    key: str
+    label: str
+    type: str = "quick_filter"
+    query_param: str | None = None
+    value: str | bool | None = None
+    is_active: bool = True
+
+
 class HomeFeedResponse(BaseModel):
     location_context: HomeLocationContext
     categories: list[CategorySummary]
     restaurants: list[RestaurantCardSummary]
     explore_restaurants: list[RestaurantCardSummary] = []
+    filters: list[HomeFeedFilterOption] = []
     promos: list[PromoBannerResponse] = []
     hero_promos: list[PromoBannerResponse] = []
     banner_promos: list[PromoBannerResponse] = []

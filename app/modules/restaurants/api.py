@@ -21,6 +21,7 @@ from app.modules.restaurants.models import Category, Restaurant
 from app.modules.restaurants.repository import RestaurantRepository
 from app.modules.restaurants.schemas import (
     CategorySummary,
+    HomeFeedFilterOption,
     HomeFeedResponse,
     HomeLocationContext,
     RestaurantCardSummary,
@@ -194,6 +195,36 @@ def build_review_eligibility(
             reason="Only customers with delivered orders can review this restaurant.",
         )
     return RestaurantReviewEligibilityResponse(can_create_review=True)
+
+
+def build_home_feed_filters() -> list[HomeFeedFilterOption]:
+    return [
+        HomeFeedFilterOption(key="filters", label="Filters", type="sheet"),
+        HomeFeedFilterOption(
+            key="sort_by",
+            label="Sort By",
+            type="sort",
+            query_param="sort_by",
+        ),
+        HomeFeedFilterOption(
+            key="highly_reordered",
+            label="Highly Reordered",
+            query_param="sort_by",
+            value="highly_reordered",
+        ),
+        HomeFeedFilterOption(
+            key="veg",
+            label="Veg",
+            query_param="food_type",
+            value=FoodType.veg.value,
+        ),
+        HomeFeedFilterOption(
+            key="non_veg",
+            label="Non Veg",
+            query_param="food_type",
+            value=FoodType.non_veg.value,
+        ),
+    ]
 
 
 @router.get(
@@ -605,8 +636,9 @@ async def delete_restaurant_review(
     summary="Get homepage feed",
     description=(
         "Builds the customer homepage payload used by YummyDoors surfaces. "
-        "The response includes location context, featured categories, promo banners, "
-        "recommended items, popular foods, and restaurant cards."
+        "The response includes location context, featured categories, filter chips, "
+        "promo banners, recommended items, sales-ranked popular foods, featured videos, "
+        "and restaurant cards."
     ),
 )
 async def get_home_feed(
@@ -688,6 +720,7 @@ async def get_home_feed(
         categories=[build_category_summary(category) for category in categories],
         restaurants=[build_restaurant_summary(restaurant) for restaurant in restaurants],
         explore_restaurants=[build_restaurant_summary(r) for r in explore_restaurants],
+        filters=build_home_feed_filters(),
         promos=promos,
         hero_promos=hero_promos,
         banner_promos=banner_promos,
