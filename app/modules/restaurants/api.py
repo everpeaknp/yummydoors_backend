@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import logging
 from collections import OrderedDict
 from datetime import datetime
 from math import asin, cos, radians, sin, sqrt
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import ValidationError
 
 from app.db.session import get_db
 from app.modules.auth.deps import get_current_user_optional
@@ -39,6 +41,7 @@ from app.modules.restaurants.schemas import (
 from app.schemas.common import ApiResponse
 
 router = APIRouter(tags=["restaurants"])
+logger = logging.getLogger(__name__)
 
 
 def get_restaurant_repository(db=Depends(get_db)) -> RestaurantRepository:
@@ -225,6 +228,20 @@ def build_home_feed_filters() -> list[HomeFeedFilterOption]:
             value=FoodType.non_veg.value,
         ),
     ]
+
+
+def build_safe_menu_item_summaries(items: list, *, section: str) -> list[MenuItemSummary]:
+    summaries: list[MenuItemSummary] = []
+    for item in items:
+        try:
+            summaries.append(MenuItemSummary.model_validate(item))
+        except ValidationError as exc:
+            logger.warning(
+                "Skipping invalid menu item in home feed section %s: %s",
+                section,
+                exc,
+            )
+    return summaries
 
 
 @router.get(
@@ -681,7 +698,10 @@ async def get_home_feed(
 
     catalog_service = CatalogService(db)
     raw_popular = await catalog_service.repository.list_popular_items(limit=8)
-    popular_foods = [MenuItemSummary.model_validate(item) for item in raw_popular]
+    popular_foods = build_safe_menu_item_summaries(
+        list(raw_popular),
+        section="popular_foods",
+    )
 
     # Recommended for you: pull items from favorited restaurants; fall back to featured items
     if current_user is not None:
@@ -695,7 +715,10 @@ async def get_home_feed(
             raw_recommended = await catalog_service.repository.list_featured_items(limit=8)
     else:
         raw_recommended = await catalog_service.repository.list_featured_items(limit=8)
-    recommended_items = [MenuItemSummary.model_validate(item) for item in raw_recommended]
+    recommended_items = build_safe_menu_item_summaries(
+        list(raw_recommended),
+        section="recommended_items",
+    )
 
     merch_service = MerchandisingService(db)
     hero_promos = await merch_service.list_active_promos(
