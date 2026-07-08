@@ -623,6 +623,7 @@ async def get_home_feed(
     ),
 ):
     restaurants = await repo.list_restaurants()
+    explore_restaurants = await repo.list_popular_restaurants(limit=12)
     categories = await repo.list_featured_categories()
 
     location_title = "Choose location"
@@ -682,6 +683,7 @@ async def get_home_feed(
         ),
         categories=[build_category_summary(category) for category in categories],
         restaurants=[build_restaurant_summary(restaurant) for restaurant in restaurants],
+        explore_restaurants=[build_restaurant_summary(r) for r in explore_restaurants],
         promos=promos,
         hero_promos=hero_promos,
         banner_promos=banner_promos,

@@ -6,7 +6,12 @@ from sqlalchemy.orm import selectinload
 
 from app.modules.catalog.models import FoodType, MenuItem
 from app.modules.orders.models import Order, OrderStatus
-from app.modules.restaurants.models import Category, Restaurant, RestaurantCategory, RestaurantReview
+from app.modules.restaurants.models import (
+    Category,
+    Restaurant,
+    RestaurantCategory,
+    RestaurantReview,
+)
 
 
 class RestaurantRepository:
@@ -20,7 +25,9 @@ class RestaurantRepository:
                 selectinload(Restaurant.category_links).selectinload(RestaurantCategory.category)
             )
             .where(Restaurant.status == "active")
-            .order_by(Restaurant.sort_rank.desc(), Restaurant.rating_average.desc(), Restaurant.id.asc())
+            .order_by(
+                Restaurant.sort_rank.desc(), Restaurant.rating_average.desc(), Restaurant.id.asc()
+            )
         )
 
     async def list_restaurants(
@@ -38,11 +45,13 @@ class RestaurantRepository:
         stmt = self._restaurant_query()
 
         if category_slug:
-            stmt = stmt.join(
-                RestaurantCategory,
-                RestaurantCategory.restaurant_id == Restaurant.id,
-            ).join(Category, Category.id == RestaurantCategory.category_id).where(
-                Category.slug == category_slug
+            stmt = (
+                stmt.join(
+                    RestaurantCategory,
+                    RestaurantCategory.restaurant_id == Restaurant.id,
+                )
+                .join(Category, Category.id == RestaurantCategory.category_id)
+                .where(Category.slug == category_slug)
             )
 
         if search or food_type:
@@ -73,9 +82,15 @@ class RestaurantRepository:
             stmt = stmt.where(Restaurant.is_featured.is_(True))
 
         if sort_by == "rating":
-            stmt = stmt.order_by(Restaurant.rating_average.desc(), Restaurant.review_count.desc(), Restaurant.id.asc())
+            stmt = stmt.order_by(
+                Restaurant.rating_average.desc(),
+                Restaurant.review_count.desc(),
+                Restaurant.id.asc(),
+            )
         elif sort_by == "delivery_time":
-            stmt = stmt.order_by(Restaurant.delivery_eta_min_minutes.asc().nullslast(), Restaurant.id.asc())
+            stmt = stmt.order_by(
+                Restaurant.delivery_eta_min_minutes.asc().nullslast(), Restaurant.id.asc()
+            )
         elif sort_by == "highly_reordered":
             popularity_rank = (
                 select(func.max(func.coalesce(MenuItem.popularity_score, 0)))
@@ -85,7 +100,9 @@ class RestaurantRepository:
             )
             stmt = stmt.order_by(popularity_rank.desc().nullslast(), Restaurant.id.asc())
         else:
-            stmt = stmt.order_by(Restaurant.sort_rank.desc(), Restaurant.rating_average.desc(), Restaurant.id.asc())
+            stmt = stmt.order_by(
+                Restaurant.sort_rank.desc(), Restaurant.rating_average.desc(), Restaurant.id.asc()
+            )
 
         result = await self.db.execute(stmt.distinct())
         return list(result.scalars().unique().all())
@@ -100,7 +117,32 @@ class RestaurantRepository:
         )
         return int(result.scalar_one() or 0)
 
-    async def search_restaurants(self, *, query: str, limit: int = 12) -> list[tuple[Restaurant, list[MenuItem]]]:
+    async def list_popular_restaurants(self, limit: int = 12) -> list[Restaurant]:
+        """Restaurants ranked by total delivered order count — powers the Explore section."""
+        order_count_sub = (
+            select(func.count(Order.id))
+            .where(
+                Order.restaurant_id == Restaurant.id,
+                Order.status == OrderStatus.delivered,
+            )
+            .correlate(Restaurant)
+            .scalar_subquery()
+        )
+        stmt = (
+            self._restaurant_query()
+            .order_by(
+                order_count_sub.desc(),
+                Restaurant.rating_average.desc(),
+                Restaurant.id.asc(),
+            )
+            .limit(limit)
+        )
+        result = await self.db.execute(stmt)
+        return list(result.scalars().unique().all())
+
+    async def search_restaurants(
+        self, *, query: str, limit: int = 12
+    ) -> list[tuple[Restaurant, list[MenuItem]]]:
         term = f"%{query.strip().lower()}%"
         restaurant_stmt = (
             self._restaurant_query()
@@ -133,11 +175,16 @@ class RestaurantRepository:
             .order_by(MenuItem.popularity_score.desc(), MenuItem.id.asc())
         )
         menu_items = list((await self.db.execute(menu_stmt)).scalars().all())
-        items_by_restaurant: dict[int, list[MenuItem]] = {restaurant_id: [] for restaurant_id in restaurant_ids}
+        items_by_restaurant: dict[int, list[MenuItem]] = {
+            restaurant_id: [] for restaurant_id in restaurant_ids
+        }
         for item in menu_items:
             items_by_restaurant.setdefault(item.restaurant_id, []).append(item)
 
-        return [(restaurant, items_by_restaurant.get(restaurant.id, [])[:4]) for restaurant in restaurants]
+        return [
+            (restaurant, items_by_restaurant.get(restaurant.id, [])[:4])
+            for restaurant in restaurants
+        ]
 
     async def list_featured_categories(self) -> list[Category]:
         result = await self.db.execute(
@@ -147,8 +194,12 @@ class RestaurantRepository:
         )
         return list(result.scalars().all())
 
-    async def list_related_restaurants(self, restaurant: Restaurant, limit: int = 6) -> list[Restaurant]:
-        category_ids = [link.category_id for link in restaurant.category_links if link.category_id is not None]
+    async def list_related_restaurants(
+        self, restaurant: Restaurant, limit: int = 6
+    ) -> list[Restaurant]:
+        category_ids = [
+            link.category_id for link in restaurant.category_links if link.category_id is not None
+        ]
         if not category_ids:
             return []
 
@@ -278,5 +329,7 @@ class RestaurantRepository:
         await self.db.commit()
 
     async def get_restaurant_by_id(self, restaurant_id: int) -> Restaurant | None:
-        result = await self.db.execute(self._restaurant_query().where(Restaurant.id == restaurant_id))
+        result = await self.db.execute(
+            self._restaurant_query().where(Restaurant.id == restaurant_id)
+        )
         return result.scalars().unique().first()

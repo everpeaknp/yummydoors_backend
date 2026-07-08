@@ -1,12 +1,13 @@
 from datetime import UTC, datetime
 
 from fastapi import HTTPException, status
-from sqlalchemy import and_, select
+from sqlalchemy import and_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.modules.carts.models import Cart, CartItem, CartStatus
 from app.modules.carts.repository import CartRepository
+from app.modules.catalog.models import MenuItem
 from app.modules.customers.models import CustomerAddress
 from app.modules.orders.models import Order, OrderStatus
 from app.modules.orders.repository import OrderRepository
@@ -16,9 +17,9 @@ from app.modules.orders.schemas import (
     OrderItemResponse,
     OrderPricingBreakdown,
     OrderResponse,
-    OrderTimelineEvent,
     OrderSummaryRequest,
     OrderSummaryResponse,
+    OrderTimelineEvent,
 )
 
 
@@ -93,8 +94,14 @@ class OrderService:
         ]
 
         restaurant_name = order.restaurant.name if order.restaurant else "Unknown"
-        restaurant_logo = order.restaurant.logo_url if order.restaurant and order.restaurant.logo_url else ""
-        restaurant_tags = order.restaurant.primary_cuisine_label if order.restaurant and order.restaurant.primary_cuisine_label else ""
+        restaurant_logo = (
+            order.restaurant.logo_url if order.restaurant and order.restaurant.logo_url else ""
+        )
+        restaurant_tags = (
+            order.restaurant.primary_cuisine_label
+            if order.restaurant and order.restaurant.primary_cuisine_label
+            else ""
+        )
         delivery_time = order.estimated_delivery_window or "20-30 min"
         items_total = round(sum(item.price * item.quantity for item in order.items), 2)
 
@@ -161,26 +168,38 @@ class OrderService:
         result = await self.session.execute(stmt)
         return result.scalars().first()
 
-    async def _get_customer_address(self, customer_id: int, address_id: int) -> CustomerAddress | None:
+    async def _get_customer_address(
+        self, customer_id: int, address_id: int
+    ) -> CustomerAddress | None:
         return await self.cart_repo.get_customer_address(customer_id, address_id)
 
-    async def checkout_cart(self, customer_id: int, cart_id: int, checkout_data: CheckoutRequest) -> OrderResponse:
+    async def checkout_cart(
+        self, customer_id: int, cart_id: int, checkout_data: CheckoutRequest
+    ) -> OrderResponse:
         cart = await self._get_checkout_cart(customer_id, cart_id)
         if not cart or not cart.items:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cart is empty or invalid")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Cart is empty or invalid"
+            )
 
         cart_updates: dict[str, object] = {}
         address_id = checkout_data.address_id or cart.address_id
         if address_id is not None:
             address = await self._get_customer_address(customer_id, address_id)
             if address is None:
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid address.")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid address."
+                )
             cart_updates["address_id"] = address.id
         elif cart.address_id is None:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Delivery address is required.")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Delivery address is required."
+            )
 
         if checkout_data.coupon_code is not None:
-            cart_updates["coupon_code"] = checkout_data.coupon_code.strip().upper() if checkout_data.coupon_code else None
+            cart_updates["coupon_code"] = (
+                checkout_data.coupon_code.strip().upper() if checkout_data.coupon_code else None
+            )
         if checkout_data.needs_cutlery is not None:
             cart_updates["needs_cutlery"] = checkout_data.needs_cutlery
         if checkout_data.cooking_request is not None:
@@ -213,7 +232,23 @@ class OrderService:
         if cart is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cart not found")
 
-        order = await self.repo.create_order_from_cart(cart, payment_method=checkout_data.payment_method)
+        order = await self.repo.create_order_from_cart(
+            cart, payment_method=checkout_data.payment_method
+        )
+
+        # Increment popularity_score on each ordered item (tracks sales count)
+        item_quantities: dict[int, int] = {}
+        for cart_item in cart.items:
+            if cart_item.menu_item_id is not None:
+                item_quantities[cart_item.menu_item_id] = (
+                    item_quantities.get(cart_item.menu_item_id, 0) + cart_item.quantity
+                )
+        for menu_item_id, qty in item_quantities.items():
+            await self.session.execute(
+                update(MenuItem)
+                .where(MenuItem.id == menu_item_id)
+                .values(popularity_score=MenuItem.popularity_score + qty)
+            )
 
         if order.status == OrderStatus.placed:
             order.preparing_at = datetime.now(UTC)
@@ -234,6 +269,7 @@ class OrderService:
         if not order:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
         return self._format_order_response(order)
+
     async def calculate_summary(self, payload: OrderSummaryRequest) -> OrderSummaryResponse:
         from app.modules.catalog.models import MenuItem, MenuModifierItem
 
@@ -249,7 +285,7 @@ class OrderService:
             all_mod_ids = []
             for req_item in payload.items:
                 all_mod_ids.extend(req_item.modifier_ids)
-            
+
             modifiers_map = {}
             if all_mod_ids:
                 mod_stmt = select(MenuModifierItem).where(MenuModifierItem.id.in_(all_mod_ids))
@@ -277,11 +313,9 @@ class OrderService:
                 line_total = item_price * req_item.quantity
                 items_total += line_total
 
-                response_items.append(OrderItemResponse(
-                    name=item_name,
-                    price=item_price,
-                    quantity=req_item.quantity
-                ))
+                response_items.append(
+                    OrderItemResponse(name=item_name, price=item_price, quantity=req_item.quantity)
+                )
 
         # Basic fixed pricing logic (should ideally come from restaurant or distance)
         delivery_fee = 100.0 if items_total > 0 else 0.0

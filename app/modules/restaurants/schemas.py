@@ -216,6 +216,7 @@ class HomeFeedResponse(BaseModel):
     location_context: HomeLocationContext
     categories: list[CategorySummary]
     restaurants: list[RestaurantCardSummary]
+    explore_restaurants: list[RestaurantCardSummary] = []
     promos: list[PromoBannerResponse] = []
     hero_promos: list[PromoBannerResponse] = []
     banner_promos: list[PromoBannerResponse] = []

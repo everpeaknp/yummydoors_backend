@@ -24,18 +24,13 @@ class CatalogRepository:
         return result.scalars().all()
 
     async def list_popular_items(self, limit: int = 10) -> Sequence[MenuItem]:
-        from sqlalchemy import or_
-
         stmt = (
             select(MenuItem)
-            .where(
-                MenuItem.is_available == True,
-                or_(MenuItem.is_popular == True, MenuItem.favorite_count > 0),
-            )
+            .where(MenuItem.is_available == True)
             .order_by(
                 MenuItem.favorite_count.desc(),
-                MenuItem.is_popular.desc(),
                 MenuItem.popularity_score.desc(),
+                MenuItem.is_popular.desc(),
                 MenuItem.id.desc(),
             )
             .limit(limit)
