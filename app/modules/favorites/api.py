@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import ValidationError
 
 from app.db.session import get_db
 from app.modules.auth.deps import get_current_user
@@ -16,10 +19,34 @@ from app.modules.restaurants.api import build_restaurant_summary_with_context
 from app.schemas.common import ApiResponse
 
 router = APIRouter(prefix="/favorites", tags=["Favorites"])
+logger = logging.getLogger(__name__)
 
 
 def get_favorites_repository(db=Depends(get_db)) -> FavoritesRepository:
     return FavoritesRepository(db)
+
+
+def build_safe_favorite_menu_items(menu_item_favorites) -> list[FavoriteMenuItemResponse]:
+    items: list[FavoriteMenuItemResponse] = []
+    for favorite in menu_item_favorites:
+        if favorite.menu_item is None or favorite.menu_item.restaurant is None:
+            continue
+        try:
+            items.append(
+                FavoriteMenuItemResponse(
+                    id=favorite.id,
+                    created_at=favorite.created_at.isoformat(),
+                    menu_item=MenuItemSummary.model_validate(favorite.menu_item),
+                    restaurant=build_restaurant_summary_with_context(
+                        restaurant=favorite.menu_item.restaurant,
+                        latitude=None,
+                        longitude=None,
+                    ),
+                )
+            )
+        except ValidationError as exc:
+            logger.warning("Skipping invalid favorite menu item %s: %s", favorite.id, exc)
+    return items
 
 
 @router.get(
@@ -48,20 +75,7 @@ async def list_favorites(
             for favorite in restaurant_favorites
             if favorite.restaurant is not None
         ],
-        menu_items=[
-            FavoriteMenuItemResponse(
-                id=favorite.id,
-                created_at=favorite.created_at.isoformat(),
-                menu_item=MenuItemSummary.model_validate(favorite.menu_item),
-                restaurant=build_restaurant_summary_with_context(
-                    restaurant=favorite.menu_item.restaurant,
-                    latitude=None,
-                    longitude=None,
-                ),
-            )
-            for favorite in menu_item_favorites
-            if favorite.menu_item is not None and favorite.menu_item.restaurant is not None
-        ],
+        menu_items=build_safe_favorite_menu_items(menu_item_favorites),
         restaurant_ids=sorted({favorite.restaurant_id for favorite in restaurant_favorites}),
         menu_item_ids=sorted({favorite.menu_item_id for favorite in menu_item_favorites}),
     )

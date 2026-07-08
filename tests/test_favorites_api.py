@@ -1,7 +1,13 @@
+from types import SimpleNamespace
+
 import pytest
 from fastapi import HTTPException
 
-from app.modules.favorites.api import favorite_menu_item, unfavorite_menu_item
+from app.modules.favorites.api import (
+    build_safe_favorite_menu_items,
+    favorite_menu_item,
+    unfavorite_menu_item,
+)
 
 
 class _User:
@@ -113,3 +119,46 @@ async def test_unfavorite_menu_item_missing_favorite_is_idempotent():
 
     assert response.status == "success"
     assert response.data == {"menu_item_id": 2}
+
+
+def test_build_safe_favorite_menu_items_skips_invalid_rows():
+    valid_menu_item = _MenuItem()
+    invalid_menu_item = SimpleNamespace(
+        id=3,
+        restaurant_id=1,
+        category_id=None,
+        slug=None,
+        name="Broken Item",
+        description=None,
+        image_url=None,
+        price=120,
+        currency_code="NPR",
+        is_available=True,
+        food_type=None,
+        is_spicy=False,
+        is_featured=False,
+        is_popular=False,
+        popularity_score=0,
+        rating_average=0,
+        rating_count=0,
+        modifier_groups=[],
+        restaurant=_Restaurant(),
+    )
+
+    rows = [
+        SimpleNamespace(
+            id=11,
+            created_at=type("CreatedAt", (), {"isoformat": lambda self: "2026-07-08T00:00:00"})(),
+            menu_item=valid_menu_item,
+        ),
+        SimpleNamespace(
+            id=12,
+            created_at=type("CreatedAt", (), {"isoformat": lambda self: "2026-07-08T00:00:00"})(),
+            menu_item=invalid_menu_item,
+        ),
+    ]
+
+    result = build_safe_favorite_menu_items(rows)
+
+    assert len(result) == 1
+    assert result[0].menu_item.id == 2

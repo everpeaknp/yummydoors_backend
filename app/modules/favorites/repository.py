@@ -4,7 +4,7 @@ from sqlalchemy import and_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.modules.catalog.models import MenuItem
+from app.modules.catalog.models import MenuItem, MenuModifierGroup
 from app.modules.favorites.models import UserFavoriteMenuItem, UserFavoriteRestaurant
 from app.modules.restaurants.models import Restaurant, RestaurantCategory
 
@@ -36,6 +36,9 @@ class FavoritesRepository:
                 .selectinload(Restaurant.category_links)
                 .selectinload(RestaurantCategory.category),
                 selectinload(UserFavoriteMenuItem.menu_item).selectinload(MenuItem.category),
+                selectinload(UserFavoriteMenuItem.menu_item)
+                .selectinload(MenuItem.modifier_groups)
+                .selectinload(MenuModifierGroup.items),
             )
             .where(UserFavoriteMenuItem.user_id == user_id)
             .order_by(UserFavoriteMenuItem.created_at.desc(), UserFavoriteMenuItem.id.desc())
@@ -100,6 +103,7 @@ class FavoritesRepository:
                 .selectinload(Restaurant.category_links)
                 .selectinload(RestaurantCategory.category),
                 selectinload(MenuItem.category),
+                selectinload(MenuItem.modifier_groups).selectinload(MenuModifierGroup.items),
             )
             .where(MenuItem.id == menu_item_id)
         )
