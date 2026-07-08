@@ -210,6 +210,8 @@ class HomeLocationContext(BaseModel):
     selected_address_id: int | None = None
     saved_addresses_count: int = 0
     selected_address_label: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
 
 
 class HomeFeedResponse(BaseModel):

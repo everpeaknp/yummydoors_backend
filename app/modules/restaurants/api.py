@@ -641,6 +641,8 @@ async def get_home_feed(
             location_subtitle = profile.default_address.location_subtitle
             selected_address_id = profile.default_address.id
             selected_address_label = profile.default_address.address_summary
+            latitude = profile.default_address.latitude
+            longitude = profile.default_address.longitude
     elif latitude is not None and longitude is not None:
         location_title = "Current Location"
         location_subtitle = "Delivering to your area"
@@ -680,6 +682,8 @@ async def get_home_feed(
             selected_address_id=selected_address_id,
             saved_addresses_count=saved_addresses_count,
             selected_address_label=selected_address_label,
+            latitude=latitude,
+            longitude=longitude,
         ),
         categories=[build_category_summary(category) for category in categories],
         restaurants=[build_restaurant_summary(restaurant) for restaurant in restaurants],
