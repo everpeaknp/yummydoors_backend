@@ -66,6 +66,7 @@ class OrderResponse(BaseModel):
 class MerchantOrderResponse(BaseModel):
     id: int
     customerId: int
+    restaurantId: int
     orderNumber: str
     restaurantName: str
     customerName: str

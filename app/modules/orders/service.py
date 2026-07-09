@@ -374,6 +374,7 @@ class OrderService:
                 MerchantOrderResponse(
                     id=order.id,
                     customerId=order.customer_id,
+                    restaurantId=order.restaurant_id,
                     orderNumber=order.order_number,
                     restaurantName=order.restaurant.name if order.restaurant else "Unknown",
                     customerName=order.customer.full_name if order.customer else "Unknown",
@@ -435,6 +436,7 @@ class OrderService:
         return MerchantOrderResponse(
             id=order.id,
             customerId=order.customer_id,
+            restaurantId=order.restaurant_id,
             orderNumber=order.order_number,
             restaurantName=order.restaurant.name if order.restaurant else "Unknown",
             customerName=order.customer.full_name if order.customer else "Unknown",
