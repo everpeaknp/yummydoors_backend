@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, Float, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import Boolean, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
@@ -11,6 +11,7 @@ from app.models.mixins import TimestampMixin
 if TYPE_CHECKING:
     from app.modules.auth.models import User
     from app.modules.integrations.pos.models import RestaurantPosLink
+    from app.modules.orders.models import Order
 
 
 class Restaurant(Base, TimestampMixin):
@@ -61,6 +62,9 @@ class Restaurant(Base, TimestampMixin):
     )
     reviews: Mapped[list["RestaurantReview"]] = relationship(
         back_populates="restaurant", cascade="all, delete-orphan"
+    )
+    gallery_images: Mapped[list["RestaurantGalleryImage"]] = relationship(
+        back_populates="restaurant", cascade="all, delete-orphan", order_by="RestaurantGalleryImage.sort_order"
     )
 
 
@@ -150,6 +154,11 @@ class RestaurantReview(Base, TimestampMixin):
         nullable=True,
         index=True,
     )
+    order_id: Mapped[int | None] = mapped_column(
+        ForeignKey("orders.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     author_name: Mapped[str] = mapped_column(String(255), nullable=False)
     rating: Mapped[float] = mapped_column(Float, nullable=False)
     comment: Mapped[str | None] = mapped_column(String(4000), nullable=True)
@@ -159,7 +168,41 @@ class RestaurantReview(Base, TimestampMixin):
 
     restaurant: Mapped[Restaurant] = relationship(back_populates="reviews")
     user: Mapped["User | None"] = relationship(foreign_keys=[user_id])
+    images: Mapped[list["RestaurantReviewImage"]] = relationship(
+        back_populates="review", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
-        UniqueConstraint("user_id", "restaurant_id", name="uq_restaurant_reviews_user_restaurant"),
+        UniqueConstraint("order_id", name="uq_restaurant_reviews_order"),
     )
+
+
+class RestaurantGalleryImage(Base, TimestampMixin):
+    """Extra gallery photos uploaded by the merchant (beyond cover/logo/menu)."""
+
+    __tablename__ = "restaurant_gallery_images"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    restaurant_id: Mapped[int] = mapped_column(
+        ForeignKey("restaurants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    image_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    caption: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    restaurant: Mapped[Restaurant] = relationship(back_populates="gallery_images")
+
+
+class RestaurantReviewImage(Base, TimestampMixin):
+    """Customer-uploaded images attached to a restaurant review (up to 5)."""
+
+    __tablename__ = "restaurant_review_images"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    review_id: Mapped[int] = mapped_column(
+        ForeignKey("restaurant_reviews.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    image_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    review: Mapped[RestaurantReview] = relationship(back_populates="images")

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.modules.catalog.schemas import MenuItemSummary
 from app.modules.merchandising.schemas import FeaturedVideoResponse, PromoBannerResponse
@@ -91,6 +91,21 @@ class RestaurantReviewSummary(BaseModel):
     highlights: list[str] = []
 
 
+class GalleryImageResponse(BaseModel):
+    id: int
+    image_url: str
+    caption: str | None = None
+    sort_order: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class GalleryImageCreate(BaseModel):
+    image_url: str
+    caption: str | None = None
+    sort_order: int = 0
+
+
 class RestaurantReviewResponse(BaseModel):
     id: int
     user_id: int | None = None
@@ -101,16 +116,34 @@ class RestaurantReviewResponse(BaseModel):
     created_at: str
     is_mine: bool = False
     can_edit: bool = False
+    image_urls: list[str] = []
 
 
 class RestaurantReviewCreate(BaseModel):
     rating: float
     comment: str | None = None
+    order_id: int | None = None
+    image_urls: list[str] = []
+
+    @field_validator("image_urls")
+    @classmethod
+    def limit_images(cls, v: list[str]) -> list[str]:
+        if len(v) > 5:
+            raise ValueError("You can upload at most 5 images per review.")
+        return v
 
 
 class RestaurantReviewUpdate(BaseModel):
     rating: float | None = None
     comment: str | None = None
+    image_urls: list[str] | None = None
+
+    @field_validator("image_urls")
+    @classmethod
+    def limit_images(cls, v: list[str] | None) -> list[str] | None:
+        if v is not None and len(v) > 5:
+            raise ValueError("You can upload at most 5 images per review.")
+        return v
 
 
 class RestaurantReviewEligibilityResponse(BaseModel):
@@ -132,6 +165,7 @@ class RestaurantDetailResponse(BaseModel):
     reviews: list[RestaurantReviewResponse] = []
     viewer_review: RestaurantReviewResponse | None = None
     review_eligibility: RestaurantReviewEligibilityResponse | None = None
+    gallery_images: list[GalleryImageResponse] = []
 
 
 class RestaurantSearchMatch(BaseModel):
@@ -176,6 +210,7 @@ class MerchantRestaurantProfileResponse(BaseModel):
     sort_rank: int
     is_featured: bool
     categories: list[CategorySummary] = []
+    gallery_images: list[GalleryImageResponse] = []
 
 
 class MerchantRestaurantProfileUpdate(BaseModel):

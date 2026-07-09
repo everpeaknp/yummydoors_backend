@@ -25,6 +25,8 @@ from app.modules.restaurants.schemas import (
     CategorySummary,
     DashboardStatPoint,
     DashboardStatsResponse,
+    GalleryImageCreate,
+    GalleryImageResponse,
     HomeFeedFilterOption,
     HomeFeedResponse,
     HomeLocationContext,
@@ -171,6 +173,7 @@ def build_review_response(
     current_user_id: int | None,
 ) -> RestaurantReviewResponse:
     is_mine = current_user_id is not None and review.user_id == current_user_id
+    image_urls = [img.image_url for img in sorted(review.images, key=lambda i: i.sort_order)] if hasattr(review, "images") and review.images else []
     return RestaurantReviewResponse(
         id=review.id,
         user_id=review.user_id,
@@ -181,6 +184,7 @@ def build_review_response(
         created_at=review.created_at.isoformat(),
         is_mine=is_mine,
         can_edit=is_mine,
+        image_urls=image_urls,
     )
 
 
@@ -437,6 +441,10 @@ async def get_restaurant_detail(
         ],
         viewer_review=viewer_review,
         review_eligibility=review_eligibility,
+        gallery_images=[
+            GalleryImageResponse(id=img.id, image_url=img.image_url, caption=img.caption, sort_order=img.sort_order)
+            for img in restaurant.gallery_images
+        ],
     )
     return ApiResponse(message="Restaurant detail fetched successfully.", data=data)
 
@@ -564,6 +572,14 @@ async def create_restaurant_review(
             status_code=status.HTTP_409_CONFLICT,
             detail="You already reviewed this restaurant. Edit your existing review instead.",
         )
+    # If an order_id is provided, ensure it hasn't already been reviewed
+    if payload.order_id is not None:
+        order_review = await repo.get_review_by_order(payload.order_id)
+        if order_review is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This order has already been reviewed.",
+            )
     if not await repo.has_delivered_order(restaurant.id, current_user.id):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -576,6 +592,8 @@ async def create_restaurant_review(
         author_name=current_user.full_name,
         rating=payload.rating,
         comment=payload.comment.strip() if payload.comment else None,
+        order_id=payload.order_id,
+        image_urls=payload.image_urls or [],
     )
     await repo.sync_review_stats(restaurant.id)
     data = build_review_response(review, current_user_id=current_user.id)
@@ -615,6 +633,7 @@ async def update_restaurant_review(
         review,
         rating=payload.rating,
         comment=payload.comment.strip() if payload.comment is not None else None,
+        image_urls=payload.image_urls,
     )
     await repo.sync_review_stats(restaurant.id)
     data = build_review_response(updated, current_user_id=current_user.id)
@@ -648,6 +667,95 @@ async def delete_restaurant_review(
     await repo.delete_review(review)
     await repo.sync_review_stats(restaurant.id)
     return ApiResponse(message="Review deleted successfully.", data={"review_id": review_id})
+
+
+# ── Gallery Endpoints ──────────────────────────────────────────────────────────
+
+@router.get(
+    "/restaurants/{slug}/gallery",
+    response_model=ApiResponse[list[GalleryImageResponse]],
+    summary="List restaurant gallery images",
+)
+async def list_restaurant_gallery(
+    slug: str,
+    repo: RestaurantRepository = Depends(get_restaurant_repository),
+):
+    restaurant = await repo.get_restaurant_by_slug(slug)
+    if restaurant is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Restaurant not found.")
+    images = await repo.list_gallery_images(restaurant.id)
+    data = [
+        GalleryImageResponse(id=img.id, image_url=img.image_url, caption=img.caption, sort_order=img.sort_order)
+        for img in images
+    ]
+    return ApiResponse(message="Gallery images fetched successfully.", data=data)
+
+
+@router.post(
+    "/merchant/restaurants/{restaurant_id}/gallery",
+    response_model=ApiResponse[GalleryImageResponse],
+    status_code=status.HTTP_201_CREATED,
+    summary="Add a gallery image (merchant)",
+)
+async def add_merchant_gallery_image(
+    restaurant_id: int,
+    payload: GalleryImageCreate,
+    current_user: User = Depends(get_current_user),
+    repo: RestaurantRepository = Depends(get_restaurant_repository),
+):
+    restaurant = await repo.get_restaurant_by_id(restaurant_id)
+    if restaurant is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Restaurant not found.")
+    existing = await repo.list_gallery_images(restaurant_id)
+    if len(existing) >= 20:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Gallery limit reached (max 20 images).",
+        )
+    image = await repo.add_gallery_image(
+        restaurant_id=restaurant_id,
+        image_url=payload.image_url,
+        caption=payload.caption,
+        sort_order=payload.sort_order,
+    )
+    data = GalleryImageResponse(id=image.id, image_url=image.image_url, caption=image.caption, sort_order=image.sort_order)
+    return ApiResponse(message="Gallery image added successfully.", data=data)
+
+
+@router.get(
+    "/merchant/restaurants/{restaurant_id}/gallery",
+    response_model=ApiResponse[list[GalleryImageResponse]],
+    summary="List merchant restaurant gallery images",
+)
+async def list_merchant_gallery_images(
+    restaurant_id: int,
+    current_user: User = Depends(get_current_user),
+    repo: RestaurantRepository = Depends(get_restaurant_repository),
+):
+    images = await repo.list_gallery_images(restaurant_id)
+    data = [
+        GalleryImageResponse(id=img.id, image_url=img.image_url, caption=img.caption, sort_order=img.sort_order)
+        for img in images
+    ]
+    return ApiResponse(message="Gallery images fetched successfully.", data=data)
+
+
+@router.delete(
+    "/merchant/restaurants/{restaurant_id}/gallery/{image_id}",
+    response_model=ApiResponse[dict],
+    summary="Delete a gallery image (merchant)",
+)
+async def delete_merchant_gallery_image(
+    restaurant_id: int,
+    image_id: int,
+    current_user: User = Depends(get_current_user),
+    repo: RestaurantRepository = Depends(get_restaurant_repository),
+):
+    image = await repo.get_gallery_image_by_id(restaurant_id, image_id)
+    if image is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Gallery image not found.")
+    await repo.delete_gallery_image(image)
+    return ApiResponse(message="Gallery image deleted successfully.", data={"image_id": image_id})
 
 
 @router.get(

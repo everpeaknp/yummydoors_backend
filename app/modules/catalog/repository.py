@@ -7,7 +7,7 @@ from sqlalchemy.orm import selectinload
 from app.modules.catalog.models import MenuItem, MenuModifierGroup
 from app.modules.merchandising.models import PromoBanner, PromoTargetType
 from app.modules.orders.models import Order, OrderItem, OrderStatus
-from app.modules.restaurants.models import Category, Restaurant, RestaurantCategory
+from app.modules.restaurants.models import Category, Restaurant, RestaurantCategory, RestaurantGalleryImage
 
 
 class CatalogRepository:
@@ -139,7 +139,8 @@ class CatalogRepository:
         stmt = (
             select(Restaurant)
             .options(
-                selectinload(Restaurant.category_links).selectinload(RestaurantCategory.category)
+                selectinload(Restaurant.category_links).selectinload(RestaurantCategory.category),
+                selectinload(Restaurant.gallery_images),
             )
             .where(Restaurant.id == restaurant_id)
         )

@@ -9,6 +9,7 @@ from app.modules.auth.models import User
 from app.modules.merchandising.schemas import MerchantPromoCreate, MerchantPromoUpdate, PromoBannerResponse
 from app.modules.restaurants.schemas import (
     CategorySummary,
+    GalleryImageResponse,
     MerchantRestaurantProfileResponse,
     MerchantRestaurantProfileUpdate,
 )
@@ -93,6 +94,15 @@ class CatalogService:
             sort_rank=restaurant.sort_rank,
             is_featured=restaurant.is_featured,
             categories=categories,
+            gallery_images=[
+                GalleryImageResponse(
+                    id=img.id,
+                    image_url=img.image_url,
+                    caption=img.caption,
+                    sort_order=img.sort_order,
+                )
+                for img in sorted(restaurant.gallery_images, key=lambda i: i.sort_order)
+            ],
         )
 
     async def update_merchant_restaurant_profile(

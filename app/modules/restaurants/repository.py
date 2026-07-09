@@ -10,7 +10,9 @@ from app.modules.restaurants.models import (
     Category,
     Restaurant,
     RestaurantCategory,
+    RestaurantGalleryImage,
     RestaurantReview,
+    RestaurantReviewImage,
 )
 
 
@@ -22,7 +24,8 @@ class RestaurantRepository:
         return (
             select(Restaurant)
             .options(
-                selectinload(Restaurant.category_links).selectinload(RestaurantCategory.category)
+                selectinload(Restaurant.category_links).selectinload(RestaurantCategory.category),
+                selectinload(Restaurant.gallery_images),
             )
             .where(Restaurant.status == "active")
             .order_by(
@@ -218,6 +221,7 @@ class RestaurantRepository:
     async def list_reviews(self, restaurant_id: int, limit: int = 20) -> list[RestaurantReview]:
         stmt = (
             select(RestaurantReview)
+            .options(selectinload(RestaurantReview.images))
             .where(
                 and_(
                     RestaurantReview.restaurant_id == restaurant_id,
@@ -231,21 +235,38 @@ class RestaurantRepository:
         return list(result.scalars().all())
 
     async def get_review_by_id(self, restaurant_id: int, review_id: int) -> RestaurantReview | None:
-        stmt = select(RestaurantReview).where(
-            and_(
-                RestaurantReview.restaurant_id == restaurant_id,
-                RestaurantReview.id == review_id,
+        stmt = (
+            select(RestaurantReview)
+            .options(selectinload(RestaurantReview.images))
+            .where(
+                and_(
+                    RestaurantReview.restaurant_id == restaurant_id,
+                    RestaurantReview.id == review_id,
+                )
             )
         )
         result = await self.db.execute(stmt)
         return result.scalars().first()
 
     async def get_review_by_user(self, restaurant_id: int, user_id: int) -> RestaurantReview | None:
-        stmt = select(RestaurantReview).where(
-            and_(
-                RestaurantReview.restaurant_id == restaurant_id,
-                RestaurantReview.user_id == user_id,
+        stmt = (
+            select(RestaurantReview)
+            .options(selectinload(RestaurantReview.images))
+            .where(
+                and_(
+                    RestaurantReview.restaurant_id == restaurant_id,
+                    RestaurantReview.user_id == user_id,
+                )
             )
+        )
+        result = await self.db.execute(stmt)
+        return result.scalars().first()
+
+    async def get_review_by_order(self, order_id: int) -> RestaurantReview | None:
+        stmt = (
+            select(RestaurantReview)
+            .options(selectinload(RestaurantReview.images))
+            .where(RestaurantReview.order_id == order_id)
         )
         result = await self.db.execute(stmt)
         return result.scalars().first()
@@ -273,6 +294,8 @@ class RestaurantRepository:
         author_name: str,
         rating: float,
         comment: str | None,
+        order_id: int | None = None,
+        image_urls: list[str] | None = None,
     ) -> RestaurantReview:
         review = RestaurantReview(
             restaurant_id=restaurant_id,
@@ -280,13 +303,30 @@ class RestaurantRepository:
             author_name=author_name,
             rating=rating,
             comment=comment,
+            order_id=order_id,
             source="yummydoors",
             is_published=True,
         )
         self.db.add(review)
+        await self.db.flush()  # get review.id before committing
+
+        if image_urls:
+            for idx, url in enumerate(image_urls[:5]):
+                self.db.add(
+                    RestaurantReviewImage(review_id=review.id, image_url=url, sort_order=idx)
+                )
+
         await self.db.commit()
         await self.db.refresh(review)
-        return review
+        # Eagerly load images after refresh
+        stmt = (
+            select(RestaurantReview)
+            .options(selectinload(RestaurantReview.images))
+            .where(RestaurantReview.id == review.id)
+        )
+        result = await self.db.execute(stmt)
+        loaded = result.scalars().first()
+        return loaded or review
 
     async def update_review(
         self,
@@ -294,15 +334,34 @@ class RestaurantRepository:
         *,
         rating: float | None,
         comment: str | None,
+        image_urls: list[str] | None = None,
     ) -> RestaurantReview:
         if rating is not None:
             review.rating = rating
         if comment is not None:
             review.comment = comment
         review.is_published = True
+
+        if image_urls is not None:
+            # Replace all images
+            for img in list(review.images):
+                await self.db.delete(img)
+            await self.db.flush()
+            for idx, url in enumerate(image_urls[:5]):
+                self.db.add(
+                    RestaurantReviewImage(review_id=review.id, image_url=url, sort_order=idx)
+                )
+
         await self.db.commit()
-        await self.db.refresh(review)
-        return review
+        # Re-load with images
+        stmt = (
+            select(RestaurantReview)
+            .options(selectinload(RestaurantReview.images))
+            .where(RestaurantReview.id == review.id)
+        )
+        result = await self.db.execute(stmt)
+        loaded = result.scalars().first()
+        return loaded or review
 
     async def delete_review(self, review: RestaurantReview) -> None:
         await self.db.delete(review)
@@ -333,3 +392,49 @@ class RestaurantRepository:
             self._restaurant_query().where(Restaurant.id == restaurant_id)
         )
         return result.scalars().unique().first()
+
+    # ── Gallery ──────────────────────────────────────────────────────────────
+
+    async def list_gallery_images(self, restaurant_id: int) -> list[RestaurantGalleryImage]:
+        stmt = (
+            select(RestaurantGalleryImage)
+            .where(RestaurantGalleryImage.restaurant_id == restaurant_id)
+            .order_by(RestaurantGalleryImage.sort_order.asc(), RestaurantGalleryImage.id.asc())
+        )
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())
+
+    async def get_gallery_image_by_id(
+        self, restaurant_id: int, image_id: int
+    ) -> RestaurantGalleryImage | None:
+        stmt = select(RestaurantGalleryImage).where(
+            and_(
+                RestaurantGalleryImage.restaurant_id == restaurant_id,
+                RestaurantGalleryImage.id == image_id,
+            )
+        )
+        result = await self.db.execute(stmt)
+        return result.scalars().first()
+
+    async def add_gallery_image(
+        self,
+        *,
+        restaurant_id: int,
+        image_url: str,
+        caption: str | None = None,
+        sort_order: int = 0,
+    ) -> RestaurantGalleryImage:
+        image = RestaurantGalleryImage(
+            restaurant_id=restaurant_id,
+            image_url=image_url,
+            caption=caption,
+            sort_order=sort_order,
+        )
+        self.db.add(image)
+        await self.db.commit()
+        await self.db.refresh(image)
+        return image
+
+    async def delete_gallery_image(self, image: RestaurantGalleryImage) -> None:
+        await self.db.delete(image)
+        await self.db.commit()
