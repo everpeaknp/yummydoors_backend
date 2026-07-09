@@ -60,6 +60,19 @@ class OrderResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class MerchantOrderResponse(BaseModel):
+    id: int
+    orderNumber: str
+    restaurantName: str
+    customerName: str
+    date: str
+    status: OrderStatus
+    totalPrice: float
+    items: list[OrderItemResponse]
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class CheckoutRequest(BaseModel):
     payment_method: str = "cash"
     address_id: int | None = None

@@ -17,6 +17,8 @@ from app.modules.workspaces.api import router as workspace_router
 
 from app.modules.carts.api import router as carts_router
 from app.modules.orders.api import router as orders_router
+from app.modules.messages.api import router as messages_router
+from app.modules.reviews.api import router as reviews_router
 
 OPENAPI_TAGS = [
     {
@@ -58,6 +60,14 @@ OPENAPI_TAGS = [
     {
         "name": "Orders",
         "description": "Checkout, placed-order history, and order detail endpoints.",
+    },
+    {
+        "name": "Messages",
+        "description": "Merchant-customer direct messaging with WebSocket real-time support.",
+    },
+    {
+        "name": "Reviews",
+        "description": "Customer reviews for restaurants, and merchant reply endpoints.",
     },
     {
         "name": "Reservations",
@@ -102,6 +112,8 @@ app.include_router(workspace_router, prefix=settings.api_v1_prefix)
 app.include_router(carts_router, prefix=settings.api_v1_prefix)
 app.include_router(orders_router, prefix=settings.api_v1_prefix)
 app.include_router(reservations_router, prefix=settings.api_v1_prefix)
+app.include_router(messages_router, prefix=settings.api_v1_prefix)
+app.include_router(reviews_router, prefix=settings.api_v1_prefix)
 
 
 @app.get("/health")

@@ -47,9 +47,6 @@ class CloudinaryService:
 
         uploader = CloudinaryService._configure_cloudinary()
 
-        # Read file content safely
-        content = await file.read()
-
         # Determine the full folder path (e.g., Yummydoors/promos)
         base_folder = os.getenv("CLOUDINARY_DEFAULT_FOLDER", "Yummydoors")
         full_folder_path = f"{base_folder}/{folder_name}"
@@ -61,7 +58,7 @@ class CloudinaryService:
             unique_filename = f"{uuid.uuid4().hex[:8]}_{original_name.replace(' ', '_')}"
 
             response = uploader.upload(
-                content,
+                file.file,
                 folder=full_folder_path,
                 public_id=unique_filename,
                 resource_type="image",

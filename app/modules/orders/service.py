@@ -20,6 +20,7 @@ from app.modules.orders.schemas import (
     OrderSummaryRequest,
     OrderSummaryResponse,
     OrderTimelineEvent,
+    MerchantOrderResponse,
 )
 
 
@@ -336,3 +337,104 @@ class OrderService:
         )
 
         return OrderSummaryResponse(items=response_items, pricing=pricing)
+
+    async def get_merchant_orders(self, merchant_user_id: int) -> list[MerchantOrderResponse]:
+        # Get active workspace restaurant for user
+        from app.modules.workspaces.repository import WorkspaceRepository
+        
+        workspace_repo = WorkspaceRepository(self.session)
+        workspace = await workspace_repo.get_active_workspace(merchant_user_id)
+        if not workspace or workspace.workspace_type != "merchant":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Active workspace is not a merchant workspace.")
+            
+        restaurant_id = workspace.primary_restaurant_id
+        if not restaurant_id:
+            return []
+
+        # We'll use a direct select because the repo get_all might not be optimized for this
+        stmt = (
+            select(Order)
+            .options(selectinload(Order.items), selectinload(Order.customer), selectinload(Order.restaurant))
+            .where(Order.restaurant_id == restaurant_id)
+            .order_by(Order.created_at.desc())
+        )
+        result = await self.session.execute(stmt)
+        orders = result.scalars().all()
+
+        responses = []
+        for order in orders:
+            items = [
+                OrderItemResponse(name=item.name, price=item.price, quantity=item.quantity)
+                for item in order.items
+            ]
+            responses.append(
+                MerchantOrderResponse(
+                    id=order.id,
+                    orderNumber=order.order_number,
+                    restaurantName=order.restaurant.name if order.restaurant else "Unknown",
+                    customerName=order.customer.full_name if order.customer else "Unknown",
+                    date=order.created_at.strftime("%d/%m/%Y"),
+                    status=order.status,
+                    totalPrice=order.total_price,
+                    items=items,
+                )
+            )
+        return responses
+
+    async def update_merchant_order_status(self, merchant_user_id: int, order_id: int, new_status: OrderStatus) -> MerchantOrderResponse:
+        from app.modules.workspaces.repository import WorkspaceRepository
+        workspace_repo = WorkspaceRepository(self.session)
+        workspace = await workspace_repo.get_active_workspace(merchant_user_id)
+        
+        if not workspace or workspace.workspace_type != "merchant":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Active workspace is not a merchant workspace.")
+            
+        restaurant_id = workspace.primary_restaurant_id
+        if not restaurant_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No active restaurant context.")
+
+        order = await self.repo.get_by_id(order_id)
+        if not order:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found.")
+            
+        if order.restaurant_id != restaurant_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to modify this order.")
+
+        # Update order status
+        order.status = new_status
+        now = datetime.now(UTC)
+        
+        if new_status == OrderStatus.preparing:
+            order.preparing_at = now
+        elif new_status == OrderStatus.delivered:
+            order.delivered_at = now
+        elif new_status == OrderStatus.cancelled:
+            order.cancelled_at = now
+
+        await self.session.commit()
+        await self.session.refresh(order)
+        
+        # We need to manually load relationships for response
+        stmt = (
+            select(Order)
+            .options(selectinload(Order.items), selectinload(Order.customer), selectinload(Order.restaurant))
+            .where(Order.id == order_id)
+        )
+        result = await self.session.execute(stmt)
+        order = result.scalar_one()
+
+        items = [
+            OrderItemResponse(name=item.name, price=item.price, quantity=item.quantity)
+            for item in order.items
+        ]
+        
+        return MerchantOrderResponse(
+            id=order.id,
+            orderNumber=order.order_number,
+            restaurantName=order.restaurant.name if order.restaurant else "Unknown",
+            customerName=order.customer.full_name if order.customer else "Unknown",
+            date=order.created_at.strftime("%d/%m/%Y"),
+            status=order.status,
+            totalPrice=order.total_price,
+            items=items,
+        )

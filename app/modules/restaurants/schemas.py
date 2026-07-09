@@ -235,3 +235,33 @@ class HomeFeedResponse(BaseModel):
     recommended_items: list[MenuItemSummary] = []
     popular_foods: list[MenuItemSummary] = []
     featured_videos: list[FeaturedVideoResponse] = []
+
+
+class DashboardStatPoint(BaseModel):
+    date: str   # YYYY-MM-DD
+    count: int
+    revenue: float = 0.0
+
+
+class TopSellingItem(BaseModel):
+    name: str
+    count: int
+
+
+class DashboardStatsResponse(BaseModel):
+    # Hero-card numbers
+    new_orders_7d: int = 0
+    total_revenue_7d: float = 0.0
+    average_order_value: float = 0.0
+    unread_messages: int = 0
+    new_reviews_7d: int = 0
+    new_bookmarks_7d: int = 0
+
+    # Chart data
+    order_volume_14d: list[DashboardStatPoint] = []
+    daily_revenue_30d: list[DashboardStatPoint] = []
+
+    # Deep-dive analytics
+    total_revenue_30d: float = 0.0
+    total_orders_30d: int = 0
+    top_selling_items: list[TopSellingItem] = []

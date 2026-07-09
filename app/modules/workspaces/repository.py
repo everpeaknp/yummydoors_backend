@@ -18,6 +18,22 @@ class WorkspaceRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
+    async def get_active_workspace(self, user_id: int) -> "Workspace | None":
+        """Return the user's currently-active workspace (with primary_restaurant loaded)."""
+        from app.modules.workspaces.models import Workspace as _Workspace
+        stmt = (
+            select(User)
+            .options(
+                selectinload(User.active_workspace).selectinload(_Workspace.primary_restaurant),
+            )
+            .where(User.id == user_id)
+        )
+        result = await self.session.execute(stmt)
+        user = result.scalar_one_or_none()
+        if user is None:
+            return None
+        return user.active_workspace
+
     async def get_user_with_workspaces(self, user_id: int) -> User | None:
         stmt = (
             select(User)

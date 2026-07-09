@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import ValidationError
 
 from app.db.session import get_db
-from app.modules.auth.deps import get_current_user_optional
+from app.modules.auth.deps import get_current_user, get_current_user_optional
 from app.modules.auth.models import User
 from app.modules.catalog.models import FoodType
 from app.modules.catalog.repository import CatalogRepository
@@ -23,6 +23,8 @@ from app.modules.restaurants.models import Category, Restaurant
 from app.modules.restaurants.repository import RestaurantRepository
 from app.modules.restaurants.schemas import (
     CategorySummary,
+    DashboardStatPoint,
+    DashboardStatsResponse,
     HomeFeedFilterOption,
     HomeFeedResponse,
     HomeLocationContext,
@@ -37,6 +39,7 @@ from app.modules.restaurants.schemas import (
     RestaurantReviewUpdate,
     RestaurantSearchMatch,
     RestaurantSearchResponse,
+    TopSellingItem,
 )
 from app.schemas.common import ApiResponse
 
@@ -752,3 +755,171 @@ async def get_home_feed(
         featured_videos=featured_videos,
     )
     return ApiResponse(message="Home feed fetched successfully.", data=data)
+
+
+@router.get(
+    "/merchant/restaurants/me/stats",
+    response_model=DashboardStatsResponse,
+    summary="Merchant dashboard analytics",
+    description=(
+        "Returns aggregated stats for the merchant's active restaurant: "
+        "order counts, revenue, reviews, messages, bookmarks, and time-series data "
+        "for charts."
+    ),
+)
+async def get_merchant_stats(
+    current_user: User = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import func, select
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from app.modules.favorites.models import UserFavoriteRestaurant
+    from app.modules.messages.repository import MessageRepository
+    from app.modules.orders.models import Order, OrderItem, OrderStatus
+    from app.modules.reviews.repository import ReviewRepository
+    from app.modules.workspaces.repository import WorkspaceRepository
+
+    # ── workspace check ──────────────────────────────────────────────────────
+    workspace_repo = WorkspaceRepository(db)
+    workspace = await workspace_repo.get_active_workspace(current_user.id)
+    if not workspace or workspace.workspace_type != "merchant":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Active workspace is not a merchant workspace.",
+        )
+    restaurant_id = workspace.primary_restaurant_id
+    if not restaurant_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No active restaurant in this workspace.",
+        )
+
+    now_utc = datetime.now(UTC)
+    cutoff_7d = now_utc - timedelta(days=7)
+    cutoff_14d = now_utc - timedelta(days=14)
+    cutoff_30d = now_utc - timedelta(days=30)
+
+    # ── new orders last 7d ───────────────────────────────────────────────────
+    stmt_new_orders_7d = select(func.count()).where(
+        Order.restaurant_id == restaurant_id,
+        Order.status != OrderStatus.cancelled,
+        Order.created_at >= cutoff_7d,
+    )
+    new_orders_7d: int = (await db.execute(stmt_new_orders_7d)).scalar_one()
+
+    # ── revenue last 7d ──────────────────────────────────────────────────────
+    stmt_revenue_7d = select(func.coalesce(func.sum(Order.total_price), 0.0)).where(
+        Order.restaurant_id == restaurant_id,
+        Order.status == OrderStatus.delivered,
+        Order.created_at >= cutoff_7d,
+    )
+    total_revenue_7d: float = float((await db.execute(stmt_revenue_7d)).scalar_one())
+
+    avg_order_value: float = round(total_revenue_7d / new_orders_7d, 2) if new_orders_7d else 0.0
+
+    # ── revenue last 30d ─────────────────────────────────────────────────────
+    stmt_revenue_30d = select(func.coalesce(func.sum(Order.total_price), 0.0)).where(
+        Order.restaurant_id == restaurant_id,
+        Order.status == OrderStatus.delivered,
+        Order.created_at >= cutoff_30d,
+    )
+    total_revenue_30d: float = float((await db.execute(stmt_revenue_30d)).scalar_one())
+
+    stmt_total_orders_30d = select(func.count()).where(
+        Order.restaurant_id == restaurant_id,
+        Order.status != OrderStatus.cancelled,
+        Order.created_at >= cutoff_30d,
+    )
+    total_orders_30d: int = (await db.execute(stmt_total_orders_30d)).scalar_one()
+
+    # ── unread messages ───────────────────────────────────────────────────────
+    msg_repo = MessageRepository(db)
+    unread_messages = await msg_repo.total_unread_for_restaurant(restaurant_id)
+
+    # ── new reviews last 7d ───────────────────────────────────────────────────
+    review_repo = ReviewRepository(db)
+    new_reviews_7d = await review_repo.count_new_reviews(restaurant_id, since_days=7)
+
+    # ── new bookmarks last 7d ────────────────────────────────────────────────
+    stmt_bookmarks = select(func.count()).where(
+        UserFavoriteRestaurant.restaurant_id == restaurant_id,
+        UserFavoriteRestaurant.created_at >= cutoff_7d,
+    )
+    new_bookmarks_7d: int = (await db.execute(stmt_bookmarks)).scalar_one()
+
+    # ── time-series: order volume & revenue last 14 days ─────────────────────
+    stmt_14d = (
+        select(
+            func.date(Order.created_at).label("day"),
+            func.count().label("cnt"),
+            func.coalesce(func.sum(Order.total_price), 0.0).label("rev"),
+        )
+        .where(
+            Order.restaurant_id == restaurant_id,
+            Order.status != OrderStatus.cancelled,
+            Order.created_at >= cutoff_14d,
+        )
+        .group_by(func.date(Order.created_at))
+        .order_by(func.date(Order.created_at))
+    )
+    rows_14d = (await db.execute(stmt_14d)).all()
+    order_volume_14d = [
+        DashboardStatPoint(date=str(row.day), count=row.cnt, revenue=float(row.rev))
+        for row in rows_14d
+    ]
+
+    # ── time-series: daily revenue last 30 days ──────────────────────────────
+    stmt_30d = (
+        select(
+            func.date(Order.created_at).label("day"),
+            func.count().label("cnt"),
+            func.coalesce(func.sum(Order.total_price), 0.0).label("rev"),
+        )
+        .where(
+            Order.restaurant_id == restaurant_id,
+            Order.status == OrderStatus.delivered,
+            Order.created_at >= cutoff_30d,
+        )
+        .group_by(func.date(Order.created_at))
+        .order_by(func.date(Order.created_at))
+    )
+    rows_30d = (await db.execute(stmt_30d)).all()
+    daily_revenue_30d = [
+        DashboardStatPoint(date=str(row.day), count=row.cnt, revenue=float(row.rev))
+        for row in rows_30d
+    ]
+
+    # ── top-selling menu items last 30 days ───────────────────────────────────
+    stmt_top = (
+        select(OrderItem.name, func.sum(OrderItem.quantity).label("total_qty"))
+        .join(Order, Order.id == OrderItem.order_id)
+        .where(
+            Order.restaurant_id == restaurant_id,
+            Order.status != OrderStatus.cancelled,
+            Order.created_at >= cutoff_30d,
+        )
+        .group_by(OrderItem.name)
+        .order_by(func.sum(OrderItem.quantity).desc())
+        .limit(5)
+    )
+    top_rows = (await db.execute(stmt_top)).all()
+    top_selling_items = [
+        TopSellingItem(name=row.name, count=int(row.total_qty)) for row in top_rows
+    ]
+
+    return DashboardStatsResponse(
+        new_orders_7d=new_orders_7d,
+        total_revenue_7d=total_revenue_7d,
+        average_order_value=avg_order_value,
+        unread_messages=unread_messages,
+        new_reviews_7d=new_reviews_7d,
+        new_bookmarks_7d=new_bookmarks_7d,
+        order_volume_14d=order_volume_14d,
+        daily_revenue_30d=daily_revenue_30d,
+        total_revenue_30d=total_revenue_30d,
+        total_orders_30d=total_orders_30d,
+        top_selling_items=top_selling_items,
+    )

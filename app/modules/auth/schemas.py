@@ -91,6 +91,7 @@ class UserSummary(BaseModel):
     full_name: str
     email: str | None
     phone: str | None
+    avatar_url: str | None = None
     status: str
     is_verified: bool
     roles: list[RoleSummary]

@@ -153,6 +153,7 @@ class RestaurantReview(Base, TimestampMixin):
     author_name: Mapped[str] = mapped_column(String(255), nullable=False)
     rating: Mapped[float] = mapped_column(Float, nullable=False)
     comment: Mapped[str | None] = mapped_column(String(4000), nullable=True)
+    merchant_reply: Mapped[str | None] = mapped_column(String(4000), nullable=True)
     source: Mapped[str] = mapped_column(String(50), default="yummydoors", nullable=False)
     is_published: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
