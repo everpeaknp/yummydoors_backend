@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     smtp_use_ssl: bool = False
 
     google_client_id: str | None = None
+    web_push_vapid_public_key: str | None = None
+    web_push_vapid_private_key: str | None = None
+    web_push_subject: str | None = None
 
     cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
 

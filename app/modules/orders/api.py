@@ -1,3 +1,4 @@
+import logging
 import json
 from typing import List
 from fastapi import APIRouter, Body, Depends, WebSocket, WebSocketDisconnect, status
@@ -9,11 +10,96 @@ from app.modules.auth.deps import get_current_user
 from app.modules.auth.models import User
 from app.modules.auth.repository import AuthRepository
 from app.modules.auth.service import AuthService
+from app.modules.notifications.service import NotificationService
 from app.modules.orders.models import OrderStatus
 from app.modules.orders.schemas import OrderResponse, CheckoutRequest, OrderSummaryRequest, OrderSummaryResponse, MerchantOrderResponse
 from app.modules.orders.service import OrderService
 
 router = APIRouter(prefix="/orders", tags=["Orders"])
+logger = logging.getLogger(__name__)
+
+
+def build_customer_order_event(order: OrderResponse, *, status_value: str) -> dict:
+    status_copy = status_value.replace("toPay", "to pay")
+    title = f"Order {status_copy}"
+    body = f"{order.restaurantName} updated your order to {status_copy}."
+    if status_value == "placed":
+        title = "Order placed"
+        body = f"{order.restaurantName} received your order."
+    elif status_value == "preparing":
+        title = "Order preparing"
+        body = f"{order.restaurantName} started preparing your order."
+    elif status_value == "delivered":
+        title = "Order delivered"
+        body = f"{order.restaurantName} marked your order as delivered."
+    elif status_value == "cancelled":
+        title = "Order cancelled"
+        body = f"{order.restaurantName} cancelled your order."
+
+    return NotificationService.build_order_notification_payload(
+        audience="customer",
+        event="order_update",
+        order_id=order.id,
+        order_number=order.orderNumber,
+        status=status_value,
+        restaurant_id=order.restaurantId,
+        restaurant_name=order.restaurantName,
+        title=title,
+        body=body,
+        deep_link="/orders",
+    )
+
+
+def build_merchant_order_event(
+    *,
+    order_id: int,
+    order_number: str,
+    restaurant_id: int | None,
+    restaurant_name: str,
+    customer_name: str,
+    status_value: str,
+    event_name: str,
+) -> dict:
+    if event_name == "new_order":
+        title = "New order received"
+        body = f"{customer_name} placed order {order_number}."
+    else:
+        title = f"Order {status_value}"
+        body = f"Order {order_number} is now {status_value}."
+
+    return NotificationService.build_order_notification_payload(
+        audience="merchant",
+        event=event_name,
+        order_id=order_id,
+        order_number=order_number,
+        status=status_value,
+        restaurant_id=restaurant_id,
+        restaurant_name=restaurant_name,
+        title=title,
+        body=body,
+        deep_link=f"/merchant/orders/{order_id}",
+    )
+
+
+async def safe_send_order_notifications(
+    *,
+    db: AsyncSession,
+    customer_user_id: int | None = None,
+    customer_payload: dict | None = None,
+    merchant_restaurant_id: int | None = None,
+    merchant_payload: dict | None = None,
+) -> None:
+    try:
+        service = NotificationService(db)
+        if customer_user_id is not None and customer_payload is not None:
+            await service.send_web_push_to_user(user_id=customer_user_id, payload=customer_payload)
+        if merchant_restaurant_id is not None and merchant_payload is not None:
+            await service.send_web_push_to_merchants(
+                restaurant_id=merchant_restaurant_id,
+                payload=merchant_payload,
+            )
+    except Exception:
+        logger.exception("failed to send order web push notifications")
 
 @router.post("/summary", response_model=OrderSummaryResponse)
 async def get_order_summary(
@@ -49,25 +135,30 @@ async def checkout_cart(
 ):
     service = OrderService(db)
     new_order = await service.checkout_cart(current_user.id, cart_id, checkout_data)
-    
-    # Broadcast real-time alert to the specific merchant's dashboard
-    await order_manager.broadcast_order_update(
-        new_order.restaurantId,
-        {
-            "event": "new_order",
-            "order_id": new_order.id,
-            "status": "placed",
-            "order_number": new_order.orderNumber,
-        },
+
+    customer_payload = build_customer_order_event(new_order, status_value="placed")
+    merchant_payload = build_merchant_order_event(
+        order_id=new_order.id,
+        order_number=new_order.orderNumber,
+        restaurant_id=new_order.restaurantId,
+        restaurant_name=new_order.restaurantName,
+        customer_name=current_user.full_name or current_user.email or "A customer",
+        status_value="placed",
+        event_name="new_order",
     )
-    await customer_order_manager.broadcast_order_update(
-        current_user.id,
-        {
-            "event": "order_update",
-            "order_id": new_order.id,
-            "status": "placed",
-            "order_number": new_order.orderNumber,
-        },
+
+    try:
+        await order_manager.broadcast_order_update(new_order.restaurantId, merchant_payload)
+        await customer_order_manager.broadcast_order_update(current_user.id, customer_payload)
+    except Exception:
+        logger.exception("failed to broadcast checkout order websocket event")
+
+    await safe_send_order_notifications(
+        db=db,
+        customer_user_id=current_user.id,
+        customer_payload=customer_payload,
+        merchant_restaurant_id=new_order.restaurantId,
+        merchant_payload=merchant_payload,
     )
     return new_order
 
@@ -90,28 +181,37 @@ async def update_merchant_order_status(
 ):
     service = OrderService(db)
     updated = await service.update_merchant_order_status(current_user.id, order_id, new_status)
-    # Broadcast real-time update to connected merchant dashboards
+
+    customer_payload = build_customer_order_event(updated, status_value=new_status.value)
     from app.modules.workspaces.repository import WorkspaceRepository
     workspace_repo = WorkspaceRepository(db)
     workspace = await workspace_repo.get_active_workspace(current_user.id)
-    if workspace and workspace.primary_restaurant_id:
-        await order_manager.broadcast_order_update(
-            workspace.primary_restaurant_id,
-            {
-                "event": "order_update",
-                "order_id": order_id,
-                "status": new_status.value,
-                "order_number": updated.orderNumber,
-            },
-        )
-    await customer_order_manager.broadcast_order_update(
-        updated.customerId,
-        {
-            "event": "order_update",
-            "order_id": order_id,
-            "status": new_status.value,
-            "order_number": updated.orderNumber,
-        },
+    merchant_restaurant_id = workspace.primary_restaurant_id if workspace and workspace.primary_restaurant_id else None
+    merchant_payload = build_merchant_order_event(
+        order_id=updated.id,
+        order_number=updated.orderNumber,
+        restaurant_id=merchant_restaurant_id,
+        restaurant_name=updated.restaurantName,
+        customer_name=updated.customerName,
+        status_value=new_status.value,
+        event_name="order_update",
+    )
+    try:
+        if merchant_restaurant_id:
+            await order_manager.broadcast_order_update(
+                merchant_restaurant_id,
+                merchant_payload,
+            )
+        await customer_order_manager.broadcast_order_update(updated.customerId, customer_payload)
+    except Exception:
+        logger.exception("failed to broadcast merchant order websocket event")
+
+    await safe_send_order_notifications(
+        db=db,
+        customer_user_id=updated.customerId,
+        customer_payload=customer_payload,
+        merchant_restaurant_id=merchant_restaurant_id,
+        merchant_payload=merchant_payload,
     )
     return updated
 

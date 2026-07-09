@@ -20,6 +20,7 @@ from app.modules.orders.api import router as orders_router
 from app.modules.messages.api import router as messages_router
 from app.modules.reviews.api import router as reviews_router
 from app.modules.media.api import router as media_router
+from app.modules.notifications.api import router as notifications_router
 
 OPENAPI_TAGS = [
     {
@@ -74,6 +75,10 @@ OPENAPI_TAGS = [
         "name": "Reservations",
         "description": "Table-booking availability, table inventory, customer reservations, and merchant reservation-management endpoints.",
     },
+    {
+        "name": "Notifications",
+        "description": "Browser push subscription management and web push configuration endpoints.",
+    },
 ]
 
 
@@ -116,6 +121,7 @@ app.include_router(reservations_router, prefix=settings.api_v1_prefix)
 app.include_router(messages_router, prefix=settings.api_v1_prefix)
 app.include_router(reviews_router, prefix=settings.api_v1_prefix)
 app.include_router(media_router, prefix=settings.api_v1_prefix)
+app.include_router(notifications_router, prefix=settings.api_v1_prefix)
 
 
 @app.get("/health")
