@@ -23,7 +23,9 @@ async def test_upload_image_uses_returned_uploader_module(monkeypatch):
         file=None,
         headers={"content-type": "image/png"},
     )
-    upload.file = __import__("io").BytesIO(b"banner-bytes")
+    # 1x1 transparent GIF
+    valid_gif = b"GIF89a\x01\x00\x01\x00\x80\x00\x00\xff\xff\xff\x00\x00\x00!\xf9\x04\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;"
+    upload.file = __import__("io").BytesIO(valid_gif)
 
     result = await CloudinaryService.upload_image(upload, "promos")
 
