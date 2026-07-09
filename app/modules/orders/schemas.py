@@ -41,6 +41,7 @@ class OrderTimelineEvent(BaseModel):
 
 
 class OrderResponse(BaseModel):
+    id: int
     restaurantName: str
     restaurantTags: str
     restaurantLogo: str
@@ -62,6 +63,7 @@ class OrderResponse(BaseModel):
 
 class MerchantOrderResponse(BaseModel):
     id: int
+    customerId: int
     orderNumber: str
     restaurantName: str
     customerName: str

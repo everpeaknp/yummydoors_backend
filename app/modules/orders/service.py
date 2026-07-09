@@ -125,6 +125,7 @@ class OrderService:
             )
 
         return OrderResponse(
+            id=order.id,
             restaurantName=restaurant_name,
             restaurantTags=restaurant_tags,
             restaurantLogo=restaurant_logo,
@@ -370,6 +371,7 @@ class OrderService:
             responses.append(
                 MerchantOrderResponse(
                     id=order.id,
+                    customerId=order.customer_id,
                     orderNumber=order.order_number,
                     restaurantName=order.restaurant.name if order.restaurant else "Unknown",
                     customerName=order.customer.full_name if order.customer else "Unknown",
@@ -430,6 +432,7 @@ class OrderService:
         
         return MerchantOrderResponse(
             id=order.id,
+            customerId=order.customer_id,
             orderNumber=order.order_number,
             restaurantName=order.restaurant.name if order.restaurant else "Unknown",
             customerName=order.customer.full_name if order.customer else "Unknown",

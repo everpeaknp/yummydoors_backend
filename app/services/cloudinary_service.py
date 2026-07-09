@@ -61,20 +61,16 @@ class CloudinaryService:
             # Open image with Pillow
             img = Image.open(io.BytesIO(contents))
             
-            # Convert to RGB if it's RGBA or P to avoid issues when saving as JPEG
-            if img.mode in ("RGBA", "P"):
-                img = img.convert("RGB")
-                
+            # Remove the JPEG RGB conversion and save as WEBP to preserve transparency
             # Resize if dimensions are too large (e.g. max 2048x2048)
             img.thumbnail((2048, 2048), Image.Resampling.LANCZOS)
             
-            # Save compressed image to BytesIO
+            # Save compressed image to BytesIO as WEBP (supports transparency + compression)
             img_byte_arr = io.BytesIO()
-            # 85 is a good balance between quality and file size
-            img.save(img_byte_arr, format='JPEG', quality=85, optimize=True)
+            img.save(img_byte_arr, format='WEBP', quality=85, method=6)
             img_byte_arr.seek(0)
             
-            # Use original name with .jpg extension for the public_id
+            # Use original name with .webp extension for the public_id
             original_name = (file.filename or "upload").rsplit('.', 1)[0]
             unique_filename = f"{uuid.uuid4().hex[:8]}_{original_name.replace(' ', '_')}"
 
@@ -85,7 +81,7 @@ class CloudinaryService:
                 img_byte_arr,
                 public_id=full_public_id,
                 resource_type="image",
-                format="jpg",
+                format="webp",
             )
             return response.get("secure_url")
         except Exception as e:
