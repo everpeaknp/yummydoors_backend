@@ -18,6 +18,7 @@ ALLOWED_FOLDERS = {
     "categories",
     "promos",
     "avatars",
+    "restaurant_gallery",
 }
 
 @router.post("/upload", response_model=ApiResponse[MediaUploadResponse])
