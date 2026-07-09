@@ -52,16 +52,38 @@ class CloudinaryService:
         full_folder_path = f"{base_folder}/{folder_name}"
 
         try:
-            # Upload to cloudinary
-            # We use a unique public_id to avoid overwriting files with the same original name
-            original_name = file.filename or "upload"
+            from PIL import Image
+            import io
+
+            # Read file contents
+            contents = await file.read()
+            
+            # Open image with Pillow
+            img = Image.open(io.BytesIO(contents))
+            
+            # Convert to RGB if it's RGBA or P to avoid issues when saving as JPEG
+            if img.mode in ("RGBA", "P"):
+                img = img.convert("RGB")
+                
+            # Resize if dimensions are too large (e.g. max 2048x2048)
+            img.thumbnail((2048, 2048), Image.Resampling.LANCZOS)
+            
+            # Save compressed image to BytesIO
+            img_byte_arr = io.BytesIO()
+            # 85 is a good balance between quality and file size
+            img.save(img_byte_arr, format='JPEG', quality=85, optimize=True)
+            img_byte_arr.seek(0)
+            
+            # Use original name with .jpg extension for the public_id
+            original_name = (file.filename or "upload").rsplit('.', 1)[0]
             unique_filename = f"{uuid.uuid4().hex[:8]}_{original_name.replace(' ', '_')}"
 
             response = uploader.upload(
-                file.file,
+                img_byte_arr,
                 folder=full_folder_path,
                 public_id=unique_filename,
                 resource_type="image",
+                format="jpg",
             )
             return response.get("secure_url")
         except Exception as e:
