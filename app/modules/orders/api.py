@@ -60,6 +60,15 @@ async def checkout_cart(
             "order_number": new_order.orderNumber,
         },
     )
+    await customer_order_manager.broadcast_order_update(
+        current_user.id,
+        {
+            "event": "order_update",
+            "order_id": new_order.id,
+            "status": "placed",
+            "order_number": new_order.orderNumber,
+        },
+    )
     return new_order
 
 
@@ -95,6 +104,15 @@ async def update_merchant_order_status(
                 "order_number": updated.orderNumber,
             },
         )
+    await customer_order_manager.broadcast_order_update(
+        updated.customerId,
+        {
+            "event": "order_update",
+            "order_id": order_id,
+            "status": new_status.value,
+            "order_number": updated.orderNumber,
+        },
+    )
     return updated
 
 
@@ -125,6 +143,7 @@ class OrderConnectionManager:
 
 
 order_manager = OrderConnectionManager()
+customer_order_manager = OrderConnectionManager()
 
 
 @router.websocket("/ws/merchant")
@@ -167,3 +186,35 @@ async def ws_merchant_orders(
             await websocket.receive_text()
     except WebSocketDisconnect:
         order_manager.disconnect(websocket, restaurant_id)
+
+
+@router.websocket("/ws/customer")
+async def ws_customer_orders(
+    websocket: WebSocket,
+    token: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    WebSocket for customer order tracking.
+    Connect with:  ws://host/api/v1/orders/ws/customer?token=<JWT>
+    """
+    try:
+        payload = decode_token(token, expected_type="access")
+        user_id = int(payload["sub"])
+    except Exception:
+        await websocket.close(code=4001)
+        return
+
+    auth_repo = AuthRepository(db)
+    auth_service = AuthService(auth_repo)
+    user = await auth_service.get_current_user(user_id)
+    if user is None:
+        await websocket.close(code=4001)
+        return
+
+    await customer_order_manager.connect(websocket, user_id)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        customer_order_manager.disconnect(websocket, user_id)

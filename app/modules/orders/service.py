@@ -126,6 +126,7 @@ class OrderService:
 
         return OrderResponse(
             id=order.id,
+            restaurantId=order.restaurant_id,
             restaurantName=restaurant_name,
             restaurantTags=restaurant_tags,
             restaurantLogo=restaurant_logo,

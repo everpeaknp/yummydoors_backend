@@ -42,6 +42,7 @@ class OrderTimelineEvent(BaseModel):
 
 class OrderResponse(BaseModel):
     id: int
+    restaurantId: int
     restaurantName: str
     restaurantTags: str
     restaurantLogo: str
