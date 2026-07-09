@@ -143,8 +143,9 @@ async def test_update_profile_accepts_country_code_and_national_number():
 async def test_upload_avatar_updates_profile_with_cloudinary_url(monkeypatch):
     from app.modules.customers import service as customer_service_module
 
-    async def fake_upload_image(file: UploadFile, folder_name: str) -> str:
+    async def fake_upload_image(file: UploadFile, folder_name: str, client_scope: str = "desktop") -> str:
         assert folder_name == "customers/avatars"
+        assert client_scope == "mobile"
         return "https://cdn.example.com/customer-avatar.png"
 
     monkeypatch.setattr(customer_service_module.CloudinaryService, "upload_image", fake_upload_image)

@@ -540,7 +540,7 @@ async def update_admin_reservation_status(
 )
 async def upload_admin_file(file: UploadFile = File(...), folder: str = Form("general")):
     try:
-        url = await CloudinaryService.upload_image(file, folder)
+        url = await CloudinaryService.upload_image(file, folder, client_scope="desktop")
         return ApiResponse(message="File uploaded successfully.", data={"url": url})
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -3,6 +3,8 @@ import uuid
 from fastapi import UploadFile, HTTPException
 from dotenv import load_dotenv
 
+from app.services.cloudinary_folders import cloudinary_client_folder, normalize_client_scope
+
 # Load variables from .env into os.environ
 load_dotenv()
 
@@ -37,19 +39,19 @@ class CloudinaryService:
         return cloudinary.uploader
 
     @staticmethod
-    async def upload_image(file: UploadFile, folder_name: str) -> str:
+    async def upload_image(file: UploadFile, folder_name: str, client_scope: str = "desktop") -> str:
         """
-        Uploads an image to Cloudinary in the Yummydoors/{folder_name} directory.
+        Uploads an image to Cloudinary in the Yummydoors/{client_scope}/{folder_name} directory.
         Returns the public secure URL.
         """
         if not file.content_type.startswith("image/"):
             raise HTTPException(status_code=400, detail="File must be an image")
 
         uploader = CloudinaryService._configure_cloudinary()
+        normalized_scope = normalize_client_scope(client_scope)
 
-        # Determine the full folder path (e.g., Yummydoors/promos)
-        base_folder = os.getenv("CLOUDINARY_DEFAULT_FOLDER", "Yummydoors")
-        full_folder_path = f"{base_folder}/{folder_name}"
+        # Keep uploads grouped under a root folder and a client-specific branch.
+        full_folder_path = cloudinary_client_folder(normalized_scope, folder_name)
 
         try:
             from PIL import Image
@@ -74,12 +76,10 @@ class CloudinaryService:
             original_name = (file.filename or "upload").rsplit('.', 1)[0]
             unique_filename = f"{uuid.uuid4().hex[:8]}_{original_name.replace(' ', '_')}"
 
-            # Cloudinary reliably creates subfolders if they are part of the public_id
-            full_public_id = f"{full_folder_path}/{unique_filename}"
-
             response = uploader.upload(
                 img_byte_arr,
-                public_id=full_public_id,
+                folder=full_folder_path,
+                public_id=unique_filename,
                 resource_type="image",
                 format="webp",
             )

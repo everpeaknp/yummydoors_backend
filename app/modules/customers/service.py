@@ -230,8 +230,17 @@ class CustomerService:
 
         return await self.get_profile(user_id)
 
-    async def upload_avatar(self, user_id: int, file: UploadFile) -> CustomerProfileResponse:
-        avatar_url = await CloudinaryService.upload_image(file, "customers/avatars")
+    async def upload_avatar(
+        self,
+        user_id: int,
+        file: UploadFile,
+        client_scope: str = "mobile",
+    ) -> CustomerProfileResponse:
+        avatar_url = await CloudinaryService.upload_image(
+            file,
+            "customers/avatars",
+            client_scope=client_scope,
+        )
         user = await self.repository.update_user_profile(user_id, {"avatar_url": avatar_url})
         if not user:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
