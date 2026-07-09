@@ -76,10 +76,15 @@ class NotificationService:
 
         merchant_user_ids = await self.repo.list_merchant_user_ids_for_restaurant(restaurant_id)
         if not merchant_user_ids:
+            logger.warning('Web push: no merchant users found for restaurant %s', restaurant_id)
             return
-
         for user_id in merchant_user_ids:
-            await self.send_web_push_to_user(user_id=user_id, payload=payload)
+            subscriptions = await self.repo.list_active_subscriptions_for_user(user_id)
+            if not subscriptions:
+                logger.warning('Web push: merchant user %s has no active subscriptions', user_id)
+                continue
+            for subscription in subscriptions:
+                await self._deliver_subscription(subscription.endpoint, subscription.p256dh, subscription.auth, payload)
 
     async def _deliver_subscription(
         self,
@@ -144,6 +149,15 @@ class NotificationService:
 
     @staticmethod
     def _is_web_push_configured() -> bool:
+        missing = []
+        if not settings.web_push_vapid_public_key:
+            missing.append('web_push_vapid_public_key')
+        if not settings.web_push_vapid_private_key:
+            missing.append('web_push_vapid_private_key')
+        if not settings.web_push_subject:
+            missing.append('web_push_subject')
+        if missing:
+            logger.warning('Web push not configured, missing: %s', ', '.join(missing))
         return bool(
             settings.web_push_vapid_public_key
             and settings.web_push_vapid_private_key

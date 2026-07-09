@@ -272,14 +272,27 @@ async def ws_merchant_orders(
         await websocket.close(code=4001)
         return
 
+    restaurant_id = None
     from app.modules.workspaces.repository import WorkspaceRepository
     workspace_repo = WorkspaceRepository(db)
     workspace = await workspace_repo.get_active_workspace(user_id)
-    if not workspace or workspace.workspace_type != "merchant" or not workspace.primary_restaurant_id:
+    if workspace and workspace.workspace_type == "merchant" and workspace.primary_restaurant_id:
+        restaurant_id = workspace.primary_restaurant_id
+    else:
+        token_restaurant_id = payload.get("restaurant_id")
+        if isinstance(token_restaurant_id, int) and token_restaurant_id > 0:
+            restaurant_id = token_restaurant_id
+
+    if not restaurant_id:
+        logger.warning(
+            "merchant websocket rejected user_id=%s active_workspace=%s token_restaurant_id=%s",
+            user_id,
+            getattr(workspace, "workspace_type", None),
+            payload.get("restaurant_id"),
+        )
         await websocket.close(code=4003)
         return
 
-    restaurant_id = workspace.primary_restaurant_id
     await order_manager.connect(websocket, restaurant_id)
     try:
         while True:

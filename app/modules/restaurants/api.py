@@ -378,16 +378,16 @@ async def get_restaurant_detail(
         unreviewed_order_id = await repo.get_unreviewed_delivered_order_id(restaurant.id, current_user.id)
         
         can_review = unreviewed_order_id is not None
-        viewer_review_model = None if can_review else await repo.get_review_by_user(restaurant.id, current_user.id)
-
+        # Fetch any existing review the user may have for this restaurant
+        existing_review_model = await repo.get_review_by_user(restaurant.id, current_user.id)
         viewer_review = (
-            build_review_response(viewer_review_model, current_user_id=current_user.id)
-            if viewer_review_model is not None
+            build_review_response(existing_review_model, current_user_id=current_user.id)
+            if existing_review_model is not None
             else None
         )
         review_eligibility = build_review_eligibility(
             has_delivered_order=has_delivered_order,
-            existing_review_id=viewer_review_model.id if viewer_review_model is not None else None,
+            existing_review_id=existing_review_model.id if existing_review_model is not None else None,
             can_review=can_review,
             unreviewed_order_id=unreviewed_order_id,
         )
