@@ -44,6 +44,7 @@ class OrderResponse(BaseModel):
     id: int
     restaurantId: int
     restaurantName: str
+    restaurantSlug: str
     restaurantTags: str
     restaurantLogo: str
     deliveryTime: str

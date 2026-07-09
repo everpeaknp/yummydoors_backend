@@ -192,7 +192,15 @@ def build_review_eligibility(
     *,
     has_delivered_order: bool,
     existing_review_id: int | None,
+    can_review: bool = False,
+    unreviewed_order_id: int | None = None,
 ) -> RestaurantReviewEligibilityResponse:
+    if can_review:
+        return RestaurantReviewEligibilityResponse(
+            can_create_review=True,
+            existing_review_id=None,
+            reason=None,
+        )
     if existing_review_id is not None:
         return RestaurantReviewEligibilityResponse(
             can_create_review=False,
@@ -204,7 +212,10 @@ def build_review_eligibility(
             can_create_review=False,
             reason="Only customers with delivered orders can review this restaurant.",
         )
-    return RestaurantReviewEligibilityResponse(can_create_review=True)
+    return RestaurantReviewEligibilityResponse(
+        can_create_review=False,
+        reason="You have no unreviewed orders for this restaurant."
+    )
 
 
 def build_home_feed_filters() -> list[HomeFeedFilterOption]:
@@ -363,8 +374,12 @@ async def get_restaurant_detail(
         favorites_repo = FavoritesRepository(db)
         favorite_restaurant_ids = await favorites_repo.list_favorite_restaurant_ids(current_user.id)
         favorite_menu_item_ids = await favorites_repo.list_favorite_menu_item_ids(current_user.id)
-        viewer_review_model = await repo.get_review_by_user(restaurant.id, current_user.id)
         has_delivered_order = await repo.has_delivered_order(restaurant.id, current_user.id)
+        unreviewed_order_id = await repo.get_unreviewed_delivered_order_id(restaurant.id, current_user.id)
+        
+        can_review = unreviewed_order_id is not None
+        viewer_review_model = None if can_review else await repo.get_review_by_user(restaurant.id, current_user.id)
+
         viewer_review = (
             build_review_response(viewer_review_model, current_user_id=current_user.id)
             if viewer_review_model is not None
@@ -373,6 +388,8 @@ async def get_restaurant_detail(
         review_eligibility = build_review_eligibility(
             has_delivered_order=has_delivered_order,
             existing_review_id=viewer_review_model.id if viewer_review_model is not None else None,
+            can_review=can_review,
+            unreviewed_order_id=unreviewed_order_id,
         )
 
     grouped_sections: OrderedDict[tuple[int | None, str | None, str], list[MenuItemSummary]] = (
@@ -532,11 +549,16 @@ async def get_restaurant_review_eligibility(
     if restaurant is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Restaurant not found.")
 
-    existing_review = await repo.get_review_by_user(restaurant.id, current_user.id)
     has_delivered_order = await repo.has_delivered_order(restaurant.id, current_user.id)
+    unreviewed_order_id = await repo.get_unreviewed_delivered_order_id(restaurant.id, current_user.id)
+    can_review = unreviewed_order_id is not None
+    existing_review = None if can_review else await repo.get_review_by_user(restaurant.id, current_user.id)
+    
     data = build_review_eligibility(
         has_delivered_order=has_delivered_order,
         existing_review_id=existing_review.id if existing_review is not None else None,
+        can_review=can_review,
+        unreviewed_order_id=unreviewed_order_id,
     )
     return ApiResponse(message="Review eligibility fetched successfully.", data=data)
 
@@ -566,13 +588,10 @@ async def create_restaurant_review(
     if restaurant is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Restaurant not found.")
 
-    existing_review = await repo.get_review_by_user(restaurant.id, current_user.id)
-    if existing_review is not None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="You already reviewed this restaurant. Edit your existing review instead.",
-        )
-    # If an order_id is provided, ensure it hasn't already been reviewed
+    has_delivered_order = await repo.has_delivered_order(restaurant.id, current_user.id)
+    unreviewed_order_id = await repo.get_unreviewed_delivered_order_id(restaurant.id, current_user.id)
+
+    # If they are trying to review a specific order, check that order directly
     if payload.order_id is not None:
         order_review = await repo.get_review_by_order(payload.order_id)
         if order_review is not None:
@@ -580,11 +599,23 @@ async def create_restaurant_review(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="This order has already been reviewed.",
             )
-    if not await repo.has_delivered_order(restaurant.id, current_user.id):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only customers with delivered orders can review this restaurant.",
-        )
+        # Verify the order belongs to them and is delivered
+        from app.modules.orders.models import Order, OrderStatus
+        order = await repo.db.get(Order, payload.order_id)
+        if not order or order.customer_id != current_user.id or order.status != OrderStatus.delivered:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or undelivered order.",
+            )
+        target_order_id = payload.order_id
+    else:
+        # Otherwise, fall back to any unreviewed order
+        if unreviewed_order_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="You have no remaining unreviewed orders for this restaurant.",
+            )
+        target_order_id = unreviewed_order_id
 
     review = await repo.create_review(
         restaurant_id=restaurant.id,
@@ -592,7 +623,7 @@ async def create_restaurant_review(
         author_name=current_user.full_name,
         rating=payload.rating,
         comment=payload.comment.strip() if payload.comment else None,
-        order_id=payload.order_id,
+        order_id=target_order_id,
         image_urls=payload.image_urls or [],
     )
     await repo.sync_review_stats(restaurant.id)

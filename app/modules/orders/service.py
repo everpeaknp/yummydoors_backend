@@ -128,6 +128,7 @@ class OrderService:
             id=order.id,
             restaurantId=order.restaurant_id,
             restaurantName=restaurant_name,
+            restaurantSlug=order.restaurant.slug if order.restaurant else "",
             restaurantTags=restaurant_tags,
             restaurantLogo=restaurant_logo,
             deliveryTime=delivery_time,

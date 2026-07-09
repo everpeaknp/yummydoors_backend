@@ -258,6 +258,7 @@ class RestaurantRepository:
                     RestaurantReview.user_id == user_id,
                 )
             )
+            .order_by(RestaurantReview.id.desc())
         )
         result = await self.db.execute(stmt)
         return result.scalars().first()
@@ -285,6 +286,24 @@ class RestaurantRepository:
         )
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none() is not None
+
+    async def get_unreviewed_delivered_order_id(self, restaurant_id: int, user_id: int) -> int | None:
+        stmt = (
+            select(Order.id)
+            .outerjoin(RestaurantReview, RestaurantReview.order_id == Order.id)
+            .where(
+                and_(
+                    Order.restaurant_id == restaurant_id,
+                    Order.customer_id == user_id,
+                    Order.status == OrderStatus.delivered,
+                    RestaurantReview.id.is_(None),
+                )
+            )
+            .order_by(Order.id.asc())
+            .limit(1)
+        )
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()
 
     async def create_review(
         self,
