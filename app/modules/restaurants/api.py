@@ -588,7 +588,7 @@ async def create_restaurant_review(
     if restaurant is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Restaurant not found.")
 
-    has_delivered_order = await repo.has_delivered_order(restaurant.id, current_user.id)
+
     unreviewed_order_id = await repo.get_unreviewed_delivered_order_id(restaurant.id, current_user.id)
 
     # If they are trying to review a specific order, check that order directly
