@@ -103,3 +103,13 @@ class OrderRepository:
         )
         result = await self.session.execute(stmt)
         return result.scalars().first()
+
+    async def get_by_id(self, order_id: int) -> Optional[Order]:
+        stmt = select(Order).options(
+            selectinload(Order.items),
+            selectinload(Order.restaurant),
+            selectinload(Order.customer),
+            selectinload(Order.address),
+        ).where(Order.id == order_id)
+        result = await self.session.execute(stmt)
+        return result.scalars().first()

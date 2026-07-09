@@ -78,10 +78,12 @@ class CloudinaryService:
             original_name = (file.filename or "upload").rsplit('.', 1)[0]
             unique_filename = f"{uuid.uuid4().hex[:8]}_{original_name.replace(' ', '_')}"
 
+            # Cloudinary reliably creates subfolders if they are part of the public_id
+            full_public_id = f"{full_folder_path}/{unique_filename}"
+
             response = uploader.upload(
                 img_byte_arr,
-                folder=full_folder_path,
-                public_id=unique_filename,
+                public_id=full_public_id,
                 resource_type="image",
                 format="jpg",
             )
