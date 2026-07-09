@@ -19,6 +19,7 @@ from app.modules.carts.api import router as carts_router
 from app.modules.orders.api import router as orders_router
 from app.modules.messages.api import router as messages_router
 from app.modules.reviews.api import router as reviews_router
+from app.modules.media.api import router as media_router
 
 OPENAPI_TAGS = [
     {
@@ -114,6 +115,7 @@ app.include_router(orders_router, prefix=settings.api_v1_prefix)
 app.include_router(reservations_router, prefix=settings.api_v1_prefix)
 app.include_router(messages_router, prefix=settings.api_v1_prefix)
 app.include_router(reviews_router, prefix=settings.api_v1_prefix)
+app.include_router(media_router, prefix=settings.api_v1_prefix)
 
 
 @app.get("/health")

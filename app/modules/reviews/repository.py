@@ -67,8 +67,8 @@ class ReviewRepository:
         from sqlalchemy import func
         cutoff = datetime.now(UTC) - timedelta(days=since_days)
         stmt = select(func.count()).where(
-            MerchantReview.restaurant_id == restaurant_id,
-            MerchantReview.created_at >= cutoff,
+            RestaurantReview.restaurant_id == restaurant_id,
+            RestaurantReview.created_at >= cutoff,
         )
         result = await self.session.execute(stmt)
         return result.scalar_one()

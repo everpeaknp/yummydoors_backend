@@ -1,6 +1,6 @@
 import json
 from typing import List
-from fastapi import APIRouter, Body, Depends, WebSocket, WebSocketDisconnect, status as http_status
+from fastapi import APIRouter, Body, Depends, WebSocket, WebSocketDisconnect, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import decode_token
