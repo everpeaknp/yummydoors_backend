@@ -112,7 +112,8 @@ class NotificationService:
         except WebPushException as exc:
             status_code = getattr(getattr(exc, "response", None), "status_code", None)
             logger.warning("web push failed endpoint=%s status=%s error=%s", endpoint, status_code, exc)
-            if status_code in {404, 410}:
+            error_text = str(exc)
+            if status_code in {404, 410} or "VAPID credentials" in error_text:
                 await self.repo.deactivate_subscription(endpoint)
                 await self.session.commit()
         except Exception as exc:
