@@ -44,9 +44,6 @@ class CloudinaryService:
         Uploads an image to Cloudinary in the Yummydoors/{client_scope}/{folder_name} directory.
         Returns the public secure URL.
         """
-        if not file.content_type.startswith("image/"):
-            raise HTTPException(status_code=400, detail="File must be an image")
-
         uploader = CloudinaryService._configure_cloudinary()
         normalized_scope = normalize_client_scope(client_scope)
 
@@ -61,6 +58,8 @@ class CloudinaryService:
             contents = await file.read()
             
             # Open image with Pillow
+            img = Image.open(io.BytesIO(contents))
+            img.verify()
             img = Image.open(io.BytesIO(contents))
             
             # Remove the JPEG RGB conversion and save as WEBP to preserve transparency
