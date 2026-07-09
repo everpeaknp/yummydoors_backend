@@ -6,6 +6,7 @@ from app.modules.auth.deps import get_current_user
 from app.modules.auth.models import User
 from app.modules.notifications.schemas import (
     WebPushPublicKeyResponse,
+    WebPushStatusResponse,
     WebPushSubscriptionCreate,
     WebPushSubscriptionDelete,
     WebPushSubscriptionResponse,
@@ -22,6 +23,19 @@ async def get_web_push_public_key(db: AsyncSession = Depends(get_db)):
     return ApiResponse(
         message="Web push public key fetched successfully.",
         data=WebPushPublicKeyResponse(public_key=service.get_public_vapid_key()),
+    )
+
+
+@router.get("/status", response_model=ApiResponse[WebPushStatusResponse])
+async def get_web_push_status(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    service = NotificationService(db)
+    status_payload = await service.get_web_push_status(current_user.id)
+    return ApiResponse(
+        message="Web push status fetched successfully.",
+        data=WebPushStatusResponse.model_validate(status_payload),
     )
 
 

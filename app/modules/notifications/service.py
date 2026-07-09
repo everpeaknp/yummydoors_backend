@@ -52,6 +52,13 @@ class NotificationService:
         await self.session.commit()
         return removed
 
+    async def get_web_push_status(self, user_id: int) -> dict[str, Any]:
+        active_subscription_count = await self.repo.count_active_subscriptions_for_user(user_id)
+        return {
+            "has_subscription": active_subscription_count > 0,
+            "active_subscription_count": active_subscription_count,
+        }
+
     async def send_web_push_to_user(self, *, user_id: int, payload: dict[str, Any]) -> None:
         if not self._is_web_push_configured():
             return

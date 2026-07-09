@@ -25,3 +25,8 @@ class WebPushSubscriptionResponse(BaseModel):
     is_active: bool
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class WebPushStatusResponse(BaseModel):
+    has_subscription: bool
+    active_subscription_count: int

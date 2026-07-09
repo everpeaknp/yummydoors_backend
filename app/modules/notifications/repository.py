@@ -65,6 +65,9 @@ class NotificationRepository:
         )
         return list(result.scalars().all())
 
+    async def count_active_subscriptions_for_user(self, user_id: int) -> int:
+        return len(await self.list_active_subscriptions_for_user(user_id))
+
     async def list_merchant_user_ids_for_restaurant(self, restaurant_id: int) -> list[int]:
         workspace_result = await self.session.execute(
             select(WorkspaceMembership.user_id)
