@@ -3,18 +3,12 @@ from __future__ import annotations
 import os
 
 DEFAULT_CLOUDINARY_ROOT = "Yummydoors"
-ALLOWED_CLIENT_SCOPES = {"desktop": "Desktop", "mobile": "Mobile", "web": "Web"}
 
 
 def get_cloudinary_root() -> str:
     configured = (os.getenv("CLOUDINARY_DEFAULT_FOLDER") or "").strip()
     root = configured.strip().strip("/") if configured else DEFAULT_CLOUDINARY_ROOT
     return root or DEFAULT_CLOUDINARY_ROOT
-
-
-def normalize_client_scope(client_scope: str | None) -> str:
-    scope = (client_scope or "desktop").strip().lower()
-    return ALLOWED_CLIENT_SCOPES.get(scope, "Desktop")
 
 
 def cloudinary_folder(*segments: str) -> str:
@@ -27,16 +21,17 @@ def cloudinary_folder(*segments: str) -> str:
 
 
 def cloudinary_client_folder(client_scope: str, *segments: str) -> str:
-    return cloudinary_folder(normalize_client_scope(client_scope), *segments)
+    # Keep the helper for compatibility, but foldering is now entity-based only.
+    return cloudinary_folder(*segments)
 
 
 def cloudinary_desktop_folder(*segments: str) -> str:
-    return cloudinary_client_folder("desktop", *segments)
+    return cloudinary_folder(*segments)
 
 
 def cloudinary_mobile_folder(*segments: str) -> str:
-    return cloudinary_client_folder("mobile", *segments)
+    return cloudinary_folder(*segments)
 
 
 def cloudinary_web_folder(*segments: str) -> str:
-    return cloudinary_client_folder("web", *segments)
+    return cloudinary_folder(*segments)

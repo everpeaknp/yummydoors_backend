@@ -3,7 +3,7 @@ import uuid
 from fastapi import UploadFile, HTTPException
 from dotenv import load_dotenv
 
-from app.services.cloudinary_folders import cloudinary_client_folder, normalize_client_scope
+from app.services.cloudinary_folders import cloudinary_folder
 
 # Load variables from .env into os.environ
 load_dotenv()
@@ -41,18 +41,24 @@ class CloudinaryService:
     @staticmethod
     async def upload_image(file: UploadFile, folder_name: str, client_scope: str = "desktop") -> str:
         """
-        Uploads an image to Cloudinary in the Yummydoors/{client_scope}/{folder_name} directory.
+        Uploads an image to Cloudinary in the Yummydoors/{folder_name} directory.
         Returns the public secure URL.
         """
         uploader = CloudinaryService._configure_cloudinary()
-        normalized_scope = normalize_client_scope(client_scope)
 
-        # Keep uploads grouped under a root folder and a client-specific branch.
-        full_folder_path = cloudinary_client_folder(normalized_scope, folder_name)
+        # Keep uploads grouped under a root folder and an entity-specific branch.
+        full_folder_path = cloudinary_folder(folder_name)
 
         try:
             from PIL import Image
             import io
+
+            # Reset the upload stream before reading so repeated reuse of the same
+            # UploadFile object in tests or retry flows still works.
+            try:
+                file.file.seek(0)
+            except Exception:
+                pass
 
             # Read file contents
             contents = await file.read()

@@ -32,12 +32,12 @@ async def test_upload_image_uses_returned_uploader_module(monkeypatch):
     assert result == "https://cdn.example.com/banner.jpg"
     assert len(uploader.calls) == 1
     assert uploader.calls[0][1]["resource_type"] == "image"
-    assert uploader.calls[0][1]["folder"] == "Yummydoors/Desktop/promos"
+    assert uploader.calls[0][1]["folder"] == "Yummydoors/promos"
     assert uploader.calls[0][1]["public_id"]
 
 
 @pytest.mark.asyncio
-async def test_upload_image_supports_mobile_scope(monkeypatch):
+async def test_upload_image_ignores_client_scope_for_foldering(monkeypatch):
     uploader = _UploaderStub()
     monkeypatch.setattr(CloudinaryService, "_configure_cloudinary", lambda: uploader)
 
@@ -50,5 +50,7 @@ async def test_upload_image_supports_mobile_scope(monkeypatch):
     upload.file = __import__("io").BytesIO(valid_gif)
 
     await CloudinaryService.upload_image(upload, "customers/avatars", client_scope="mobile")
+    await CloudinaryService.upload_image(upload, "customers/avatars", client_scope="web")
 
-    assert uploader.calls[0][1]["folder"] == "Yummydoors/Mobile/customers/avatars"
+    assert uploader.calls[0][1]["folder"] == "Yummydoors/customers/avatars"
+    assert uploader.calls[1][1]["folder"] == "Yummydoors/customers/avatars"
