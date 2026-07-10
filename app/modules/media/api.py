@@ -18,6 +18,7 @@ ALLOWED_FOLDERS = {
     "promos",
     "avatars",
     "restaurant_gallery",
+    "restaurant_reviews",
 }
 
 ALLOWED_CLIENT_SCOPES = {"desktop", "mobile", "web"}
