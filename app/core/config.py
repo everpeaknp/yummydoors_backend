@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import field_validator
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -33,6 +33,27 @@ class Settings(BaseSettings):
     web_push_vapid_public_key: str | None = None
     web_push_vapid_private_key: str | None = None
     web_push_subject: str | None = None
+    firebase_credentials_base64: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "FIREBASE_CREDENTIALS_BASE64",
+            "YUMMYDOORS_FIREBASE_CREDENTIALS_BASE64",
+        ),
+    )
+    firebase_credentials_path: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "GOOGLE_APPLICATION_CREDENTIALS",
+            "YUMMYDOORS_FIREBASE_CREDENTIALS_PATH",
+        ),
+    )
+    firebase_project_id: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "FIREBASE_PROJECT_ID",
+            "YUMMYDOORS_FIREBASE_PROJECT_ID",
+        ),
+    )
 
     cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
 

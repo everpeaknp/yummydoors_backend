@@ -10,8 +10,9 @@ from pywebpush import WebPushException, webpush
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.modules.notifications.fcm import FirebaseCloudMessagingClient, FcmPushError
 from app.modules.notifications.repository import NotificationRepository
-from app.modules.notifications.schemas import WebPushSubscriptionCreate
+from app.modules.notifications.schemas import FcmTokenCreate, WebPushSubscriptionCreate
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +60,30 @@ class NotificationService:
             "active_subscription_count": active_subscription_count,
         }
 
+    async def register_fcm_token(
+        self,
+        *,
+        user_id: int,
+        payload: FcmTokenCreate,
+        user_agent: str | None,
+    ):
+        record = await self.repo.upsert_fcm_token(
+            user_id=user_id,
+            token=payload.token,
+            platform=payload.platform,
+            user_agent=user_agent,
+        )
+        await self.session.commit()
+        await self.session.refresh(record)
+        return record
+
+    async def get_fcm_status(self, user_id: int) -> dict[str, Any]:
+        active_token_count = await self.repo.count_active_fcm_tokens_for_user(user_id)
+        return {
+            "has_token": active_token_count > 0,
+            "active_token_count": active_token_count,
+        }
+
     async def send_web_push_to_user(self, *, user_id: int, payload: dict[str, Any]) -> None:
         if not self._is_web_push_configured():
             return
@@ -85,6 +110,35 @@ class NotificationService:
                 continue
             for subscription in subscriptions:
                 await self._deliver_subscription(subscription.endpoint, subscription.p256dh, subscription.auth, payload)
+
+    async def send_fcm_to_user(self, *, user_id: int, payload: dict[str, Any]) -> None:
+        if not FirebaseCloudMessagingClient.is_configured():
+            logger.warning("FCM not configured, skipping push delivery.")
+            return
+
+        tokens = await self.repo.list_active_fcm_tokens_for_user(user_id)
+        if not tokens:
+            return
+
+        for record in tokens:
+            try:
+                await asyncio.to_thread(
+                    FirebaseCloudMessagingClient.send_to_token,
+                    token=record.token,
+                    payload=payload,
+                )
+            except FcmPushError as exc:
+                logger.warning(
+                    "fcm push failed token=%s status=%s error=%s",
+                    record.token,
+                    exc.status_code,
+                    exc.error_code,
+                )
+                if exc.token_invalid:
+                    await self.repo.deactivate_fcm_token(record.token)
+                    await self.session.commit()
+            except Exception as exc:
+                logger.exception("unexpected fcm push failure token=%s error=%s", record.token, exc)
 
     async def _deliver_subscription(
         self,

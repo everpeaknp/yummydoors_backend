@@ -5,8 +5,9 @@ __pycache__/
 .ruff_cache/
 .env
 .env.production
-app/secrets/
 alembic.ini.bak
 *.pyc
 dist/
 build/
+# Firebase / secrets – never commit these
+app/secrets/

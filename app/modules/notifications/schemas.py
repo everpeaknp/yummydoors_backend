@@ -30,3 +30,22 @@ class WebPushSubscriptionResponse(BaseModel):
 class WebPushStatusResponse(BaseModel):
     has_subscription: bool
     active_subscription_count: int
+
+
+class FcmTokenCreate(BaseModel):
+    token: str
+    platform: str = "flutter"
+
+
+class FcmTokenResponse(BaseModel):
+    id: int
+    token: str
+    platform: str | None = None
+    is_active: bool
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class FcmTokenStatusResponse(BaseModel):
+    has_token: bool
+    active_token_count: int

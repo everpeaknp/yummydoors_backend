@@ -93,6 +93,7 @@ async def safe_send_order_notifications(
         service = NotificationService(db)
         if customer_user_id is not None and customer_payload is not None:
             await service.send_web_push_to_user(user_id=customer_user_id, payload=customer_payload)
+            await service.send_fcm_to_user(user_id=customer_user_id, payload=customer_payload)
         if merchant_restaurant_id is not None and merchant_payload is not None:
             await service.send_web_push_to_merchants(
                 restaurant_id=merchant_restaurant_id,
