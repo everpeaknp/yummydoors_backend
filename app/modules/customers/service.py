@@ -14,6 +14,7 @@ from app.modules.customers.schemas import (
 from app.modules.auth.models import User
 from app.modules.customers.models import CustomerAddress
 from app.services.cloudinary_service import CloudinaryService
+from app.services.avatar_urls import normalize_avatar_url
 
 
 COUNTRY_BY_DIAL_CODE: dict[str, PhoneCountryResponse] = {
@@ -175,7 +176,7 @@ class CustomerService:
             phone=user.phone,
             **phone_metadata,
             full_name=user.full_name,
-            avatar_url=user.avatar_url,
+            avatar_url=normalize_avatar_url(user.avatar_url),
             status=user.status,
             is_verified=user.is_verified,
             default_address_id=user.default_address_id,
@@ -241,7 +242,10 @@ class CustomerService:
             "customers/avatars",
             client_scope=client_scope,
         )
-        user = await self.repository.update_user_profile(user_id, {"avatar_url": avatar_url})
+        user = await self.repository.update_user_profile(
+            user_id,
+            {"avatar_url": normalize_avatar_url(avatar_url)},
+        )
         if not user:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
         return await self.get_profile(user_id)
@@ -268,14 +272,16 @@ class CustomerService:
         is_default = data_dict.pop("is_default", False)
 
         address = await self.repository.create_address(user_id, data_dict)
+        address_id = address.id
 
         if is_default:
-            user = await self.repository.update_user_profile(user_id, {"default_address_id": address.id})
-            default_address_id = user.default_address_id if user else address.id
+            user = await self.repository.update_user_profile(user_id, {"default_address_id": address_id})
+            default_address_id = user.default_address_id if user else address_id
         else:
             user = await self.repository.get_user_profile(user_id)
             default_address_id = user.default_address_id if user else None
 
+        await self.repository.session.refresh(address)
         return self._build_address_response(address, default_address_id=default_address_id)
 
     async def update_address(
@@ -290,19 +296,21 @@ class CustomerService:
         address = await self.repository.update_address(address_id, user_id, data_dict)
         if not address:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Address not found")
+        address_id_value = address.id
 
         if is_default is True:
-            user = await self.repository.update_user_profile(user_id, {"default_address_id": address.id})
-            default_address_id = user.default_address_id if user else address.id
+            user = await self.repository.update_user_profile(user_id, {"default_address_id": address_id_value})
+            default_address_id = user.default_address_id if user else address_id_value
         elif is_default is False:
             user = await self.repository.get_user_profile(user_id)
-            if user and user.default_address_id == address.id:
+            if user and user.default_address_id == address_id_value:
                 user = await self.repository.update_user_profile(user_id, {"default_address_id": None})
             default_address_id = user.default_address_id if user else None
         else:
             user = await self.repository.get_user_profile(user_id)
             default_address_id = user.default_address_id if user else None
 
+        await self.repository.session.refresh(address)
         return self._build_address_response(address, default_address_id=default_address_id)
 
     async def delete_address(self, user_id: int, address_id: int):

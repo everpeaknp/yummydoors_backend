@@ -7,6 +7,7 @@ from sqlalchemy.orm import selectinload
 
 from app.modules.customers.models import CustomerAddress
 from app.modules.auth.models import RefreshSession, User, UserStatus
+from app.services.avatar_urls import normalize_avatar_url
 
 
 class CustomerRepository:
@@ -26,10 +27,12 @@ class CustomerRepository:
         user = await self.get_user_profile(user_id)
         if not user:
             return None
-        
+
         for key, value in update_data.items():
+            if key == "avatar_url":
+                value = normalize_avatar_url(value)
             setattr(user, key, value)
-            
+
         self.session.add(user)
         await self.session.commit()
         await self.session.refresh(user)

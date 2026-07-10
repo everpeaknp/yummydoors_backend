@@ -2,7 +2,7 @@ import pytest
 from io import BytesIO
 from fastapi import UploadFile
 
-from app.modules.customers.schemas import CustomerProfileUpdate
+from app.modules.customers.schemas import CustomerAddressUpdate, CustomerProfileUpdate
 from app.modules.customers.service import CustomerService
 
 
@@ -60,6 +60,8 @@ class _RepositoryStub:
         self.updated_payloads: list[dict] = []
         self.soft_deleted_user_id: int | None = None
         self.revoked_sessions_for_user_id: int | None = None
+        self.address = None
+        self.session = _SessionStub()
 
     async def get_user_by_email(self, email: str):
         return None
@@ -72,6 +74,8 @@ class _RepositoryStub:
 
     async def update_user_profile(self, user_id: int, update_data: dict):
         self.updated_payloads.append(update_data)
+        if self.address is not None:
+            self.address.expired = True
         return _ExplodingUser()
 
     async def get_user_profile(self, user_id: int):
@@ -84,6 +88,57 @@ class _RepositoryStub:
     async def soft_delete_user(self, user_id: int):
         self.soft_deleted_user_id = user_id
         return _FreshUser()
+
+    async def create_address(self, user_id: int, address_data: dict):
+        self.address = _MutableAddress()
+        self.address.user_id = user_id
+        return self.address
+
+    async def update_address(self, address_id: int, user_id: int, update_data: dict):
+        if self.address is None:
+            self.address = _MutableAddress()
+            self.address.user_id = user_id
+        for key, value in update_data.items():
+            setattr(self.address, key, value)
+        return self.address
+
+
+class _SessionStub:
+    def __init__(self) -> None:
+        self.refresh_calls: list[object] = []
+
+    async def refresh(self, obj):
+        self.refresh_calls.append(obj)
+        if "expired" in getattr(obj, "__dict__", {}):
+            obj.expired = False
+
+
+class _MutableAddress:
+    def __init__(self) -> None:
+        self.expired = False
+        self.id = 11
+        self.user_id = 7
+        self.label = "Home"
+        self.recipient_name = "Ramon"
+        self.phone_country_code = "+977"
+        self.phone_number = "9800000000"
+        self.email = "ramon@example.com"
+        self.address_line_1 = "Lakeside"
+        self.address_line_2 = None
+        self.street_number = None
+        self.city = "Pokhara"
+        self.area = "Lakeside"
+        self.state_or_province = "Gandaki"
+        self.latitude = 28.2096
+        self.longitude = 83.9856
+        self.delivery_notes = None
+        self.is_active = True
+
+    def __getattribute__(self, name):
+        if name not in {"expired", "__dict__", "__class__", "__setattr__", "__getattribute__", "__init__"}:
+            if object.__getattribute__(self, "expired"):
+                raise RuntimeError("stale attribute access")
+        return object.__getattribute__(self, name)
 
 
 @pytest.mark.asyncio
@@ -160,6 +215,23 @@ async def test_upload_avatar_updates_profile_with_cloudinary_url(monkeypatch):
 
     assert repository.updated_payloads[-1]["avatar_url"] == "https://cdn.example.com/customer-avatar.png"
     assert response.full_name == "Updated Ramon"
+
+
+@pytest.mark.asyncio
+async def test_update_address_refreshes_address_before_building_response():
+    service = CustomerService(session=None)
+    repository = _RepositoryStub()
+    service.repository = repository
+
+    response = await service.update_address(
+        7,
+        11,
+        CustomerAddressUpdate(is_default=True),
+    )
+
+    assert repository.session.refresh_calls
+    assert response.id == 11
+    assert response.is_default is True
 
 
 @pytest.mark.asyncio

@@ -3,7 +3,7 @@ import uuid
 from fastapi import UploadFile, HTTPException
 from dotenv import load_dotenv
 
-from app.services.cloudinary_folders import cloudinary_folder
+from app.services.cloudinary_folders import cloudinary_client_folder
 
 # Load variables from .env into os.environ
 load_dotenv()
@@ -46,8 +46,8 @@ class CloudinaryService:
         """
         uploader = CloudinaryService._configure_cloudinary()
 
-        # Keep uploads grouped under a root folder and an entity-specific branch.
-        full_folder_path = cloudinary_folder(folder_name)
+        # Keep uploads grouped under a root folder, source scope, and entity-specific branch.
+        full_folder_path = cloudinary_client_folder(client_scope, folder_name)
 
         try:
             from PIL import Image

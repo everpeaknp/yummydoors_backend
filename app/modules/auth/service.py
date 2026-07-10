@@ -29,6 +29,7 @@ from app.modules.integrations.pos.lookup import lookup_pos_link_status
 from app.modules.integrations.pos.models import ExternalUserLink
 from app.modules.workspaces.schemas import WorkspaceSummary
 from app.modules.workspaces.service import WorkspaceService
+from app.services.avatar_urls import normalize_avatar_url
 from app.utils.security import get_password_hash, verify_password
 
 
@@ -206,7 +207,7 @@ class AuthService:
                 email=email.lower(),
                 phone=None,
                 password_hash=None,
-                avatar_url=picture,
+                avatar_url=normalize_avatar_url(picture),
                 status=UserStatus.active,
                 is_active=True,
                 is_verified=email_verified,
@@ -221,7 +222,7 @@ class AuthService:
             await workspace_service.ensure_customer_workspace(user)
         else:
             user.full_name = user.full_name or full_name.strip()
-            user.avatar_url = picture or user.avatar_url
+            user.avatar_url = normalize_avatar_url(picture) or normalize_avatar_url(user.avatar_url)
             user.is_verified = user.is_verified or email_verified
             user.is_active = True
             user.status = UserStatus.active
@@ -556,7 +557,7 @@ class AuthService:
             full_name=user.full_name,
             email=user.email,
             phone=user.phone,
-            avatar_url=user.avatar_url,
+            avatar_url=normalize_avatar_url(user.avatar_url),
             status=user.status,
             is_verified=user.is_verified,
             roles=roles,

@@ -21,17 +21,19 @@ def cloudinary_folder(*segments: str) -> str:
 
 
 def cloudinary_client_folder(client_scope: str, *segments: str) -> str:
-    # Keep the helper for compatibility, but foldering is now entity-based only.
+    scope = str(client_scope).strip().strip("/")
+    if scope:
+        return cloudinary_folder(scope, *segments)
     return cloudinary_folder(*segments)
 
 
 def cloudinary_desktop_folder(*segments: str) -> str:
-    return cloudinary_folder(*segments)
+    return cloudinary_folder("desktop", *segments)
 
 
 def cloudinary_mobile_folder(*segments: str) -> str:
-    return cloudinary_folder(*segments)
+    return cloudinary_folder("mobile", *segments)
 
 
 def cloudinary_web_folder(*segments: str) -> str:
-    return cloudinary_folder(*segments)
+    return cloudinary_folder("web", *segments)
