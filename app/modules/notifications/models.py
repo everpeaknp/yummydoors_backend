@@ -1,16 +1,13 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
 from app.models.mixins import TimestampMixin
-
-if TYPE_CHECKING:
-    from app.modules.auth.models import User
+from app.modules.auth.models import User
 
 
 class WebPushSubscription(Base, TimestampMixin):
@@ -24,7 +21,7 @@ class WebPushSubscription(Base, TimestampMixin):
     user_agent: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
-    user = relationship("User")
+    user: Mapped[User] = relationship(User)
 
     __table_args__ = (
         UniqueConstraint("user_id", "endpoint", name="uq_web_push_subscription_user_endpoint"),
@@ -42,7 +39,7 @@ class FcmDeviceToken(Base, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    user = relationship("User")
+    user: Mapped[User] = relationship(User)
 
     __table_args__ = (
         UniqueConstraint("user_id", "token", name="uq_fcm_device_token_user_token"),
@@ -80,8 +77,8 @@ class UserNotification(Base, TimestampMixin):
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     dismissed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    recipient: Mapped["User"] = relationship("User", foreign_keys=[recipient_user_id])
-    actor: Mapped["User | None"] = relationship("User", foreign_keys=[actor_user_id])
+    recipient: Mapped[User] = relationship(User, foreign_keys=[recipient_user_id])
+    actor: Mapped[User | None] = relationship(User, foreign_keys=[actor_user_id])
 
     __table_args__ = (
         UniqueConstraint("recipient_user_id", "event_key", name="uq_user_notifications_recipient_event"),
