@@ -162,38 +162,40 @@ class CustomerService:
 
     def _build_profile_response(self, user: User) -> CustomerProfileResponse:
         default_address = None
-        active_addresses = [address for address in user.addresses if address.is_active]
-        if user.default_address_id:
+        active_addresses = [address for address in getattr(user, "addresses", []) if address.is_active]
+        default_address_id = getattr(user, "default_address_id", None)
+        if default_address_id:
             default_address = next(
-                (address for address in active_addresses if address.id == user.default_address_id),
+                (address for address in active_addresses if address.id == default_address_id),
                 None,
             )
-        phone_metadata = self._parse_phone_metadata(user.phone)
+        phone = getattr(user, "phone", None)
+        phone_metadata = self._parse_phone_metadata(phone)
 
         return CustomerProfileResponse(
             id=user.id,
             email=user.email,
-            phone=user.phone,
+            phone=phone,
             **phone_metadata,
             full_name=user.full_name,
-            avatar_url=normalize_avatar_url(user.avatar_url),
-            status=user.status,
-            is_verified=user.is_verified,
-            default_address_id=user.default_address_id,
+            avatar_url=normalize_avatar_url(getattr(user, "avatar_url", None)),
+            status=getattr(user, "status", "active"),
+            is_verified=getattr(user, "is_verified", False),
+            default_address_id=default_address_id,
             saved_addresses_count=len(active_addresses),
             default_address=(
                 self._build_address_response(
                     default_address,
-                    default_address_id=user.default_address_id,
+                    default_address_id=default_address_id,
                 )
                 if default_address
                 else None
             ),
-            total_orders=int(user.total_orders or 0),
-            total_spent=float(user.total_spent or 0),
-            loyalty_points=int(user.loyalty_points or 0),
-            loyalty_points_earned=int(user.loyalty_points_earned or 0),
-            loyalty_points_redeemed=int(user.loyalty_points_redeemed or 0),
+            total_orders=int(getattr(user, "total_orders", 0) or 0),
+            total_spent=float(getattr(user, "total_spent", 0) or 0),
+            loyalty_points=int(getattr(user, "loyalty_points", 0) or 0),
+            loyalty_points_earned=int(getattr(user, "loyalty_points_earned", 0) or 0),
+            loyalty_points_redeemed=int(getattr(user, "loyalty_points_redeemed", 0) or 0),
         )
 
     async def get_profile(self, user_id: int) -> CustomerProfileResponse:

@@ -88,6 +88,7 @@ class User(Base, TimestampMixin):
         "RiderApplication",
         back_populates="user",
         cascade="all, delete-orphan",
+        foreign_keys="[RiderApplication.user_id]",
     )
 
     __table_args__ = (
