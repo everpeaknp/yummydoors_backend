@@ -21,6 +21,8 @@ from app.modules.messages.api import router as messages_router
 from app.modules.reviews.api import router as reviews_router
 from app.modules.media.api import router as media_router
 from app.modules.notifications.api import router as notifications_router
+from app.modules.rider_applications.api import router as rider_applications_router
+from app.modules.realtime.bus import realtime_bus
 
 OPENAPI_TAGS = [
     {
@@ -77,14 +79,20 @@ OPENAPI_TAGS = [
     },
     {
         "name": "Notifications",
-        "description": "Browser push subscription management and web push configuration endpoints.",
+        "description": "Browser push subscription management, persisted in-app inbox, and web push configuration endpoints.",
+    },
+    {
+        "name": "Rider Applications",
+        "description": "Customer rider application intake and admin approval endpoints.",
     },
 ]
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    await realtime_bus.start()
     yield
+    await realtime_bus.stop()
 
 
 app = FastAPI(
@@ -122,6 +130,7 @@ app.include_router(messages_router, prefix=settings.api_v1_prefix)
 app.include_router(reviews_router, prefix=settings.api_v1_prefix)
 app.include_router(media_router, prefix=settings.api_v1_prefix)
 app.include_router(notifications_router, prefix=settings.api_v1_prefix)
+app.include_router(rider_applications_router, prefix=settings.api_v1_prefix)
 
 
 @app.get("/health")

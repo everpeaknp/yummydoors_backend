@@ -1,8 +1,11 @@
+from datetime import date
 from typing import List
-from fastapi import APIRouter, Depends, File, Form, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
+from app.modules.analytics.schemas import AnalyticsPeriod, CustomerAnalyticsResponse
+from app.modules.analytics.service import build_customer_analytics
 from app.modules.auth.deps import get_current_user
 from app.modules.auth.models import User
 from app.modules.customers.schemas import (
@@ -104,3 +107,20 @@ async def set_default_address(
 ):
     service = CustomerService(db)
     await service.set_default_address(current_user.id, address_id)
+
+
+@router.get("/analytics", response_model=CustomerAnalyticsResponse)
+async def get_my_analytics(
+    period: AnalyticsPeriod = Query(default=AnalyticsPeriod.last_7_days),
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await build_customer_analytics(
+        db,
+        customer_id=current_user.id,
+        period=period,
+        start_date=start_date,
+        end_date=end_date,
+    )

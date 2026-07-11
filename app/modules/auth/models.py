@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, Numeric, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from app.modules.restaurants.models import RestaurantUserAssignment
     from app.modules.customers.models import CustomerAddress
     from app.modules.workspaces.models import MerchantApplication, Workspace, WorkspaceMembership
+    from app.modules.rider_applications.models import RiderApplication
 
 
 class UserStatus(StrEnum):
@@ -38,6 +39,11 @@ class User(Base, TimestampMixin):
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    total_orders: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    total_spent: Mapped[float] = mapped_column(Numeric(12, 2), default=0, nullable=False)
+    loyalty_points: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    loyalty_points_earned: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    loyalty_points_redeemed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     default_address_id: Mapped[int | None] = mapped_column(ForeignKey("customer_addresses.id", ondelete="SET NULL", use_alter=True), nullable=True)
     active_restaurant_id: Mapped[int | None] = mapped_column(
         ForeignKey("restaurants.id", ondelete="SET NULL", use_alter=True),
@@ -75,6 +81,11 @@ class User(Base, TimestampMixin):
     )
     merchant_applications: Mapped[list["MerchantApplication"]] = relationship(
         "MerchantApplication",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    rider_applications: Mapped[list["RiderApplication"]] = relationship(
+        "RiderApplication",
         back_populates="user",
         cascade="all, delete-orphan",
     )

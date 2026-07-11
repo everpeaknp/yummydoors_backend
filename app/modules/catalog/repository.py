@@ -17,6 +17,9 @@ class CatalogRepository:
     async def list_featured_items(self, limit: int = 10) -> Sequence[MenuItem]:
         stmt = (
             select(MenuItem)
+            .options(
+                selectinload(MenuItem.modifier_groups).selectinload(MenuModifierGroup.items),
+            )
             .where(MenuItem.is_available == True, MenuItem.is_featured == True)
             .order_by(MenuItem.popularity_score.desc(), MenuItem.id.desc())
             .limit(limit)
@@ -28,6 +31,9 @@ class CatalogRepository:
         sales_quantity = func.sum(OrderItem.quantity).label("sales_quantity")
         stmt = (
             select(MenuItem)
+            .options(
+                selectinload(MenuItem.modifier_groups).selectinload(MenuModifierGroup.items),
+            )
             .join(OrderItem, OrderItem.menu_item_id == MenuItem.id)
             .join(Order, Order.id == OrderItem.order_id)
             .where(MenuItem.is_available == True)
@@ -49,6 +55,9 @@ class CatalogRepository:
 
         fallback_stmt = (
             select(MenuItem)
+            .options(
+                selectinload(MenuItem.modifier_groups).selectinload(MenuModifierGroup.items),
+            )
             .where(MenuItem.is_available == True)
             .order_by(
                 MenuItem.favorite_count.desc(),
@@ -66,6 +75,9 @@ class CatalogRepository:
     ) -> Sequence[MenuItem]:
         stmt = (
             select(MenuItem)
+            .options(
+                selectinload(MenuItem.modifier_groups).selectinload(MenuModifierGroup.items),
+            )
             .where(
                 MenuItem.restaurant_id.in_(restaurant_ids),
                 MenuItem.is_available == True,

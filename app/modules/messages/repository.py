@@ -87,7 +87,11 @@ class MessageRepository:
         # Reload relationships
         stmt = (
             select(Message)
-            .options(selectinload(Message.sender), selectinload(Message.customer))
+            .options(
+                selectinload(Message.sender),
+                selectinload(Message.customer),
+                selectinload(Message.restaurant),
+            )
             .where(Message.id == msg.id)
         )
         result = await self.session.execute(stmt)

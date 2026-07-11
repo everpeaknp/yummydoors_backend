@@ -189,6 +189,11 @@ class CustomerService:
                 if default_address
                 else None
             ),
+            total_orders=int(user.total_orders or 0),
+            total_spent=float(user.total_spent or 0),
+            loyalty_points=int(user.loyalty_points or 0),
+            loyalty_points_earned=int(user.loyalty_points_earned or 0),
+            loyalty_points_redeemed=int(user.loyalty_points_redeemed or 0),
         )
 
     async def get_profile(self, user_id: int) -> CustomerProfileResponse:

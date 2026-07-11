@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import logging
 from collections import OrderedDict
-from datetime import datetime
+from datetime import date, datetime
 from math import asin, cos, radians, sin, sqrt
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import ValidationError
 
 from app.db.session import get_db
+from app.modules.analytics.schemas import AnalyticsPeriod, MerchantAnalyticsResponse
+from app.modules.analytics.service import build_merchant_analytics
 from app.modules.auth.deps import get_current_user, get_current_user_optional
 from app.modules.auth.models import User
 from app.modules.catalog.models import FoodType
@@ -1061,4 +1063,45 @@ async def get_merchant_stats(
         total_revenue_30d=total_revenue_30d,
         total_orders_30d=total_orders_30d,
         top_selling_items=top_selling_items,
+    )
+
+
+@router.get(
+    "/merchant/restaurants/me/analytics",
+    response_model=MerchantAnalyticsResponse,
+    summary="Merchant analytics by date range",
+    description=(
+        "Returns merchant sales analytics for a selected window, including daily sales, "
+        "status breakdowns, top-selling items, and category spend."
+    ),
+)
+async def get_merchant_analytics(
+    period: AnalyticsPeriod = Query(default=AnalyticsPeriod.last_7_days),
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
+    current_user: User = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    from app.modules.workspaces.repository import WorkspaceRepository
+
+    workspace_repo = WorkspaceRepository(db)
+    workspace = await workspace_repo.get_active_workspace(current_user.id)
+    if not workspace or workspace.workspace_type != "merchant":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Active workspace is not a merchant workspace.",
+        )
+    restaurant_id = workspace.primary_restaurant_id
+    if not restaurant_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No active restaurant in this workspace.",
+        )
+
+    return await build_merchant_analytics(
+        db,
+        restaurant_id=restaurant_id,
+        period=period,
+        start_date=start_date,
+        end_date=end_date,
     )

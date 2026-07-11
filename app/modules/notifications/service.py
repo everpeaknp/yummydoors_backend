@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.modules.notifications.fcm import FirebaseCloudMessagingClient, FcmPushError
+from app.modules.notifications.models import UserNotification
 from app.modules.notifications.repository import NotificationRepository
 from app.modules.notifications.schemas import FcmTokenCreate, WebPushSubscriptionCreate
 
@@ -84,6 +85,166 @@ class NotificationService:
             "active_token_count": active_token_count,
         }
 
+    async def create_notification_from_payload(
+        self,
+        *,
+        recipient_user_id: int,
+        payload: dict[str, Any],
+        restaurant_id: int | None = None,
+        order_id: int | None = None,
+        message_id: int | None = None,
+        actor_user_id: int | None = None,
+    ) -> UserNotification:
+        event_key = str(payload.get("event_id") or payload.get("event") or f"notification-{recipient_user_id}")
+        audience = str(payload.get("audience") or "user")
+        category = str(payload.get("category") or payload.get("event") or "general")
+
+        record = await self.repo.upsert_user_notification(
+            recipient_user_id=recipient_user_id,
+            audience=audience,
+            category=category,
+            event_key=event_key,
+            title=str(payload.get("title") or "Notification"),
+            body=str(payload.get("body") or ""),
+            deep_link=payload.get("deep_link"),
+            payload_json=payload,
+            restaurant_id=restaurant_id if restaurant_id is not None else payload.get("restaurant_id"),
+            order_id=order_id if order_id is not None else payload.get("order_id"),
+            message_id=message_id if message_id is not None else payload.get("message_id"),
+            actor_user_id=actor_user_id if actor_user_id is not None else payload.get("actor_user_id"),
+        )
+        await self.session.commit()
+        await self.session.refresh(record)
+        return record
+
+    async def create_notifications_for_users(
+        self,
+        *,
+        recipient_user_ids: list[int],
+        payload: dict[str, Any],
+        restaurant_id: int | None = None,
+        order_id: int | None = None,
+        message_id: int | None = None,
+        actor_user_id: int | None = None,
+    ) -> list[UserNotification]:
+        seen: set[int] = set()
+        records: list[UserNotification] = []
+        for recipient_user_id in recipient_user_ids:
+            if recipient_user_id in seen:
+                continue
+            seen.add(recipient_user_id)
+            record = await self.repo.upsert_user_notification(
+                recipient_user_id=recipient_user_id,
+                audience=str(payload.get("audience") or "user"),
+                category=str(payload.get("category") or payload.get("event") or "general"),
+                event_key=str(payload.get("event_id") or payload.get("event") or f"notification-{recipient_user_id}"),
+                title=str(payload.get("title") or "Notification"),
+                body=str(payload.get("body") or ""),
+                deep_link=payload.get("deep_link"),
+                payload_json=payload,
+                restaurant_id=restaurant_id if restaurant_id is not None else payload.get("restaurant_id"),
+                order_id=order_id if order_id is not None else payload.get("order_id"),
+                message_id=message_id if message_id is not None else payload.get("message_id"),
+                actor_user_id=actor_user_id if actor_user_id is not None else payload.get("actor_user_id"),
+            )
+            records.append(record)
+        await self.session.commit()
+        for record in records:
+            await self.session.refresh(record)
+        return records
+
+    async def create_merchant_notifications_from_payload(
+        self,
+        *,
+        restaurant_id: int,
+        payload: dict[str, Any],
+        actor_user_id: int | None = None,
+        order_id: int | None = None,
+        message_id: int | None = None,
+    ) -> list[UserNotification]:
+        merchant_user_ids = await self.repo.list_merchant_user_ids_for_restaurant(restaurant_id)
+        return await self.create_notifications_for_users(
+            recipient_user_ids=merchant_user_ids,
+            payload=payload,
+            restaurant_id=restaurant_id,
+            order_id=order_id,
+            message_id=message_id,
+            actor_user_id=actor_user_id,
+        )
+
+    async def list_notifications(
+        self,
+        *,
+        recipient_user_id: int,
+        audience: str | None = None,
+        restaurant_id: int | None = None,
+        unread_only: bool = False,
+        include_dismissed: bool = False,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[UserNotification]:
+        return await self.repo.list_user_notifications(
+            recipient_user_id=recipient_user_id,
+            audience=audience,
+            restaurant_id=restaurant_id,
+            unread_only=unread_only,
+            include_dismissed=include_dismissed,
+            limit=limit,
+            offset=offset,
+        )
+
+    async def count_notifications(
+        self,
+        *,
+        recipient_user_id: int,
+        audience: str | None = None,
+        restaurant_id: int | None = None,
+        unread_only: bool = False,
+        include_dismissed: bool = False,
+    ) -> int:
+        return await self.repo.count_user_notifications(
+            recipient_user_id=recipient_user_id,
+            audience=audience,
+            restaurant_id=restaurant_id,
+            unread_only=unread_only,
+            include_dismissed=include_dismissed,
+        )
+
+    async def mark_notification_read(self, *, recipient_user_id: int, notification_id: int) -> UserNotification | None:
+        record = await self.repo.mark_user_notification_read(
+            recipient_user_id=recipient_user_id,
+            notification_id=notification_id,
+        )
+        if record is not None:
+            await self.session.commit()
+            await self.session.refresh(record)
+        return record
+
+    async def mark_all_notifications_read(
+        self,
+        *,
+        recipient_user_id: int,
+        audience: str | None = None,
+        restaurant_id: int | None = None,
+    ) -> int:
+        updated = await self.repo.mark_all_user_notifications_read(
+            recipient_user_id=recipient_user_id,
+            audience=audience,
+            restaurant_id=restaurant_id,
+        )
+        await self.session.commit()
+        return updated
+
+    async def dismiss_notification(self, *, recipient_user_id: int, notification_id: int) -> UserNotification | None:
+        record = await self.repo.dismiss_user_notification(
+            recipient_user_id=recipient_user_id,
+            notification_id=notification_id,
+        )
+        if record is not None:
+            await self.session.commit()
+            await self.session.refresh(record)
+        return record
+
     async def send_web_push_to_user(self, *, user_id: int, payload: dict[str, Any]) -> None:
         if not self._is_web_push_configured():
             return
@@ -140,6 +301,19 @@ class NotificationService:
             except Exception as exc:
                 logger.exception("unexpected fcm push failure token=%s error=%s", record.token, exc)
 
+    async def send_fcm_to_merchants(self, *, restaurant_id: int, payload: dict[str, Any]) -> None:
+        if not FirebaseCloudMessagingClient.is_configured():
+            logger.warning("FCM not configured, skipping merchant push delivery.")
+            return
+
+        merchant_user_ids = await self.repo.list_merchant_user_ids_for_restaurant(restaurant_id)
+        if not merchant_user_ids:
+            logger.warning("FCM: no merchant users found for restaurant %s", restaurant_id)
+            return
+
+        for user_id in merchant_user_ids:
+            await self.send_fcm_to_user(user_id=user_id, payload=payload)
+
     async def _deliver_subscription(
         self,
         endpoint: str,
@@ -188,6 +362,7 @@ class NotificationService:
         deep_link: str,
     ) -> dict[str, Any]:
         return {
+            "category": "order",
             "event": event,
             "event_id": f"order-{order_id}-{status}-{audience}",
             "audience": audience,
@@ -200,6 +375,39 @@ class NotificationService:
             "body": body,
             "deep_link": deep_link,
             "tag": f"order-{order_id}-{status}",
+        }
+
+    @staticmethod
+    def build_message_notification_payload(
+        *,
+        audience: str,
+        message_id: int,
+        restaurant_id: int,
+        restaurant_name: str,
+        customer_id: int,
+        customer_name: str,
+        sender_name: str,
+        is_from_merchant: bool,
+        title: str,
+        body: str,
+        deep_link: str,
+    ) -> dict[str, Any]:
+        return {
+            "category": "message",
+            "event": "new_message",
+            "event_id": f"message-{message_id}-{audience}",
+            "audience": audience,
+            "message_id": message_id,
+            "restaurant_id": restaurant_id,
+            "restaurant_name": restaurant_name,
+            "customer_id": customer_id,
+            "customer_name": customer_name,
+            "sender_name": sender_name,
+            "is_from_merchant": is_from_merchant,
+            "title": title,
+            "body": body,
+            "deep_link": deep_link,
+            "tag": f"message-{message_id}-{audience}",
         }
 
     @staticmethod

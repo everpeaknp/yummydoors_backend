@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+from urllib.parse import quote_plus
 from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
@@ -15,7 +16,14 @@ from app.modules.auth.repository import AuthRepository
 from app.modules.auth.service import AuthService
 from app.modules.messages.repository import MessageRepository
 from app.modules.messages.schemas import ConversationSummary, MessageCreate, MessageResponse
+from app.modules.realtime.bus import (
+    MESSAGE_CUSTOMER_CHANNEL,
+    MESSAGE_MERCHANT_CHANNEL,
+    realtime_bus,
+)
+from app.modules.notifications.service import NotificationService
 from app.modules.workspaces.repository import WorkspaceRepository
+from app.tasks.notifications import send_merchant_push_task, send_user_push_task
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/messages", tags=["Messages"])
@@ -48,6 +56,29 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 customer_manager = ConnectionManager()
+
+
+async def _broadcast_merchant_message(payload: dict) -> None:
+    restaurant_id = payload.get("restaurant_id")
+    if isinstance(restaurant_id, int) and restaurant_id > 0:
+        await manager.broadcast(restaurant_id, payload)
+
+
+async def _broadcast_customer_message(payload: dict) -> None:
+    customer_id = payload.get("customer_id")
+    if isinstance(customer_id, int) and customer_id > 0:
+        await customer_manager.broadcast(customer_id, payload)
+
+
+realtime_bus.register_handler(MESSAGE_MERCHANT_CHANNEL, _broadcast_merchant_message)
+realtime_bus.register_handler(MESSAGE_CUSTOMER_CHANNEL, _broadcast_customer_message)
+
+
+def _truncate_message_preview(content: str, limit: int = 96) -> str:
+    text = content.strip()
+    if len(text) <= limit:
+        return text
+    return f"{text[: limit - 1].rstrip()}…"
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -148,16 +179,58 @@ async def send_message(
         created_at=msg.created_at,
         read_at=msg.read_at,
     )
-    # Broadcast to all connected merchant dashboards for this restaurant
-    await manager.broadcast(
-        restaurant_id,
-        {"event": "new_message", "customer_id": customer_id, "message": response.model_dump()},
-    )
-    # Broadcast to the specific customer
-    await customer_manager.broadcast(
-        customer_id,
-        {"event": "new_message", "restaurant_id": restaurant_id, "message": response.model_dump()},
-    )
+    merchant_event = {
+        "event": "new_message",
+        "customer_id": customer_id,
+        "restaurant_id": restaurant_id,
+        "message": response.model_dump(mode="json"),
+    }
+    customer_event = {
+        "event": "new_message",
+        "restaurant_id": restaurant_id,
+        "customer_id": customer_id,
+        "message": response.model_dump(mode="json"),
+    }
+
+    try:
+        await realtime_bus.publish(MESSAGE_MERCHANT_CHANNEL, merchant_event)
+        await realtime_bus.publish(MESSAGE_CUSTOMER_CHANNEL, customer_event)
+    except Exception:
+        logger.exception("failed to publish merchant message realtime event")
+
+    try:
+        restaurant_name = msg.restaurant.name if msg.restaurant else "Your restaurant"
+        customer_payload = NotificationService.build_message_notification_payload(
+            audience="customer",
+            message_id=msg.id,
+            restaurant_id=restaurant_id,
+            restaurant_name=restaurant_name,
+            customer_id=customer_id,
+            customer_name=msg.customer.full_name if getattr(msg, "customer", None) else "Customer",
+            sender_name=current_user.full_name or "Merchant",
+            is_from_merchant=True,
+            title=f"New message from {current_user.full_name or restaurant_name}",
+            body=_truncate_message_preview(msg.content),
+            deep_link=(
+                f"/messages?restaurant_id={restaurant_id}"
+                f"&restaurant_name={quote_plus(restaurant_name)}"
+            ),
+        )
+        service = NotificationService(db)
+        await service.create_notification_from_payload(
+            recipient_user_id=customer_id,
+            payload=customer_payload,
+            restaurant_id=restaurant_id,
+            message_id=msg.id,
+            actor_user_id=current_user.id,
+        )
+        try:
+            send_user_push_task.delay(user_id=customer_id, payload=customer_payload)
+        except Exception:
+            await service.send_web_push_to_user(user_id=customer_id, payload=customer_payload)
+            await service.send_fcm_to_user(user_id=customer_id, payload=customer_payload)
+    except Exception:
+        logger.exception("failed to send customer message web push notifications")
     return response
 
 
@@ -235,16 +308,57 @@ async def customer_send_message(
         created_at=msg.created_at,
         read_at=msg.read_at,
     )
-    # Broadcast to merchant
-    await manager.broadcast(
-        restaurant_id,
-        {"event": "new_message", "customer_id": current_user.id, "message": response.model_dump()},
-    )
-    # Broadcast to customer
-    await customer_manager.broadcast(
-        current_user.id,
-        {"event": "new_message", "restaurant_id": restaurant_id, "message": response.model_dump()},
-    )
+    merchant_event = {
+        "event": "new_message",
+        "customer_id": current_user.id,
+        "restaurant_id": restaurant_id,
+        "message": response.model_dump(mode="json"),
+    }
+    customer_event = {
+        "event": "new_message",
+        "restaurant_id": restaurant_id,
+        "customer_id": current_user.id,
+        "message": response.model_dump(mode="json"),
+    }
+
+    try:
+        await realtime_bus.publish(MESSAGE_MERCHANT_CHANNEL, merchant_event)
+        await realtime_bus.publish(MESSAGE_CUSTOMER_CHANNEL, customer_event)
+    except Exception:
+        logger.exception("failed to publish customer message realtime event")
+
+    try:
+        restaurant_name = msg.restaurant.name if msg.restaurant else "A restaurant"
+        merchant_payload = NotificationService.build_message_notification_payload(
+            audience="merchant",
+            message_id=msg.id,
+            restaurant_id=restaurant_id,
+            restaurant_name=restaurant_name,
+            customer_id=current_user.id,
+            customer_name=current_user.full_name or current_user.email or "Customer",
+            sender_name=restaurant_name,
+            is_from_merchant=False,
+            title=f"New message from {current_user.full_name or current_user.email or 'Customer'}",
+            body=_truncate_message_preview(msg.content),
+            deep_link=(
+                f"/merchant/messages?customer_id={current_user.id}"
+                f"&customer_name={quote_plus(current_user.full_name or current_user.email or 'Customer')}"
+            ),
+        )
+        service = NotificationService(db)
+        await service.create_merchant_notifications_from_payload(
+            restaurant_id=restaurant_id,
+            payload=merchant_payload,
+            message_id=msg.id,
+            actor_user_id=current_user.id,
+        )
+        try:
+            send_merchant_push_task.delay(restaurant_id=restaurant_id, payload=merchant_payload)
+        except Exception:
+            await service.send_web_push_to_merchants(restaurant_id=restaurant_id, payload=merchant_payload)
+            await service.send_fcm_to_merchants(restaurant_id=restaurant_id, payload=merchant_payload)
+    except Exception:
+        logger.exception("failed to send merchant message web push notifications")
     return response
 
 
