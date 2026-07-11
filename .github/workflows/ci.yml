@@ -124,7 +124,14 @@ jobs:
           cd "${{ env.VPS_APP_PATH }}"
           docker pull "${{ env.IMAGE_NAME }}:${{ github.sha }}"
           docker tag "${{ env.IMAGE_NAME }}:${{ github.sha }}" "${{ env.IMAGE_NAME }}:latest"
-          docker compose up -d --force-recreate --remove-orphans app worker redis watchtower
+          available_services="$(docker compose config --services)"
+          set -- app
+          for service in worker redis watchtower; do
+            if printf '%s\n' "$available_services" | grep -qx "$service"; then
+              set -- "$@" "$service"
+            fi
+          done
+          docker compose up -d --force-recreate --remove-orphans "$@"
           docker compose ps
           end=$((SECONDS + 300))
           while [ "$SECONDS" -lt "$end" ]; do
@@ -137,6 +144,6 @@ jobs:
             sleep 5
           done
           echo "Timed out waiting for yummydoors_app to become healthy"
-          docker compose logs --tail=120 app worker redis postgres watchtower
+          docker compose logs --tail=120 app worker redis postgres watchtower 2>/dev/null || docker compose logs --tail=120 app postgres
           exit 1
           EOF
