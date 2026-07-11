@@ -141,15 +141,18 @@ jobs:
           fi
           docker compose ps
           end=$((SECONDS + 300))
+          healthy="false"
           while [ "$SECONDS" -lt "$end" ]; do
             if curl -fsS http://127.0.0.1:8010/health >/dev/null 2>&1; then
               echo "App is healthy via HTTP check!"
-              exit 0
+              healthy="true"
+              break
             fi
             status="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{end}}' yummydoors_app 2>/dev/null || true)"
             if [ "$status" = "healthy" ]; then
               echo "App is healthy via Docker!"
-              exit 0
+              healthy="true"
+              break
             fi
             state="$(docker inspect -f '{{.State.Status}}' yummydoors_app 2>/dev/null || true)"
             if [ "$state" = "exited" ] || [ "$state" = "dead" ]; then
@@ -158,7 +161,12 @@ jobs:
             fi
             sleep 5
           done
-          echo "Timed out waiting for yummydoors_app to become healthy"
-          docker compose logs --tail=120 app worker redis postgres watchtower 2>/dev/null || docker compose logs --tail=120 app postgres
-          exit 1
+          
+          if [ "$healthy" != "true" ]; then
+            echo "Failed waiting for yummydoors_app to become healthy"
+            docker compose logs --tail=120 app worker redis postgres watchtower 2>/dev/null || docker compose logs --tail=120 app postgres
+            exit 1
+          fi
+          
+          echo "Deployment completed successfully!"
           EOF
