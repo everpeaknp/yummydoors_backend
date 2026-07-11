@@ -118,7 +118,7 @@ jobs:
             -o BatchMode=yes \
             -o StrictHostKeyChecking=yes \
             -P "${{ env.VPS_PORT_NUMBER }}" \
-            vps-docker-compose.yml \
+            "${{ github.workspace }}/vps-docker-compose.yml" \
             "${{ env.VPS_USERNAME }}@${{ env.VPS_HOSTNAME }}:${{ env.VPS_APP_PATH }}/docker-compose.yml"
 
       - name: Deploy exact image on server
