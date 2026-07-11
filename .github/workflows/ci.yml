@@ -117,6 +117,8 @@ jobs:
           -o IdentitiesOnly=yes \
           -o BatchMode=yes \
           -o StrictHostKeyChecking=yes \
+          -o ServerAliveInterval=15 \
+          -o ServerAliveCountMax=20 \
           -p "${{ env.VPS_PORT_NUMBER }}" "${{ env.VPS_USERNAME }}@${{ env.VPS_HOSTNAME }}" <<'EOF'
           set -euo pipefail
           cd "${{ env.VPS_APP_PATH }}"
@@ -128,8 +130,9 @@ jobs:
           while [ "$SECONDS" -lt "$end" ]; do
             status="$(docker inspect -f '{{.State.Health.Status}}' yummydoors_app 2>/dev/null || true)"
             if [ "$status" = "healthy" ]; then
-              curl -fsS http://127.0.0.1:8010/health >/dev/null
-              exit 0
+              if curl -fsS http://127.0.0.1:8010/health >/dev/null; then
+                exit 0
+              fi
             fi
             sleep 5
           done
