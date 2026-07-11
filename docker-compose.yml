@@ -3,6 +3,7 @@ services:
     image: redis:7-alpine
     container_name: yummydoors_redis
     restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
     ports:
       - "127.0.0.1:6379:6379"
     healthcheck:
@@ -11,6 +12,8 @@ services:
       timeout: 5s
       retries: 5
       start_period: 5s
+    volumes:
+      - yummydoors_redis_data:/data
 
   postgres:
     image: postgres:17
@@ -33,3 +36,4 @@ services:
 
 volumes:
   yummydoors_postgres_data:
+  yummydoors_redis_data:

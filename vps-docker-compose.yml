@@ -3,6 +3,9 @@ services:
     image: redis:7-alpine
     container_name: yummydoors_redis
     restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
+    volumes:
+      - yummydoors_redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -87,3 +90,5 @@ services:
 volumes:
   yummydoors_postgres_data:
     name: yummydoors_postgres_data
+  yummydoors_redis_data:
+    name: yummydoors_redis_data
