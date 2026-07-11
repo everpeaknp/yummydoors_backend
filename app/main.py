@@ -1,4 +1,5 @@
-from contextlib import asynccontextmanager
+import asyncio
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -90,8 +91,19 @@ OPENAPI_TAGS = [
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    await realtime_bus.start()
+    startup_task = asyncio.create_task(realtime_bus.start())
+
+    def _consume_startup_result(task: asyncio.Task[None]) -> None:
+        with suppress(asyncio.CancelledError, Exception):
+            task.exception()
+
+    startup_task.add_done_callback(_consume_startup_result)
+
     yield
+    if not startup_task.done():
+        startup_task.cancel()
+        with suppress(asyncio.CancelledError, Exception):
+            await startup_task
     await realtime_bus.stop()
 
 
