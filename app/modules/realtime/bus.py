@@ -41,12 +41,19 @@ class RedisRealtimeBus:
         if self._started:
             return
 
-        self._client = redis.from_url(self._redis_url, decode_responses=True)
-        self._pubsub = self._client.pubsub()
-        await self._subscribe_all()
-        self._listener_task = asyncio.create_task(self._listen_loop())
-        self._started = True
-        logger.info("redis realtime bus started channels=%s", list(self._handlers))
+        try:
+            self._client = redis.from_url(self._redis_url, decode_responses=True)
+            self._pubsub = self._client.pubsub()
+            await self._subscribe_all()
+            self._listener_task = asyncio.create_task(self._listen_loop())
+            self._started = True
+            logger.info("redis realtime bus started channels=%s", list(self._handlers))
+        except Exception:
+            logger.warning(
+                "redis realtime bus unavailable; realtime delivery disabled",
+                exc_info=True,
+            )
+            await self.stop()
 
     async def stop(self) -> None:
         self._started = False
@@ -69,7 +76,8 @@ class RedisRealtimeBus:
 
     async def publish(self, channel: str, payload: dict[str, Any]) -> None:
         if self._client is None:
-            raise RuntimeError("realtime bus is not started")
+            logger.debug("dropping realtime payload because bus is not started channel=%s", channel)
+            return
 
         await self._client.publish(channel, json.dumps(payload, default=str))
 
