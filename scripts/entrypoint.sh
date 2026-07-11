@@ -25,7 +25,7 @@ done
 
 if [ "${RUN_MIGRATIONS:-1}" = "1" ]; then
   echo "Running Alembic migrations..."
-  python -m alembic upgrade head
+  python -m alembic upgrade heads
 fi
 
 echo "Starting Gunicorn..."

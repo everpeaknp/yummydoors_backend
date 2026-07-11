@@ -48,7 +48,7 @@ Set at minimum:
 ```bash
 docker pull ramoniswack/yummydoors-backend:<commit-sha>
 docker tag ramoniswack/yummydoors-backend:<commit-sha> ramoniswack/yummydoors-backend:latest
-docker compose up -d --force-recreate app
+docker compose up -d --force-recreate app worker redis watchtower
 ```
 
 ## GitHub Actions CI/CD
@@ -58,7 +58,7 @@ This repo is now set so that:
 - pull requests and pushes run CI
 - pushes to `main` build and push the Docker image, then run VPS deploy
 - the server pulls the exact commit SHA image, retags it locally as `latest`,
-  recreates the `app` service, and verifies `/health`
+  recreates the app stack, and verifies `/health`
 
 ### Required GitHub Secrets
 
@@ -105,8 +105,7 @@ That keeps TLS and public routing centralized across your server.
 
 ## Notes
 
-- Current app features do not require Redis, so it is intentionally not added.
-- If you later add background jobs, then add a worker profile instead of
-  bloating the default stack now.
+- Redis and Celery are part of the production stack because messaging,
+  notifications, and email/background jobs need a broker and worker.
 - If you change production env values, update the `ENV_PRODUCTION` GitHub secret
   and trigger the deploy workflow again.

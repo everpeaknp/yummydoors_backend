@@ -28,7 +28,7 @@ docker compose up -d
 4. Run migrations:
 
 ```bash
-alembic upgrade head
+alembic upgrade heads
 ```
 
 5. Start the API:
@@ -73,7 +73,7 @@ Files:
 
 The production container runs:
 
-1. `alembic upgrade head`
+1. `alembic upgrade heads`
 2. `gunicorn` with `uvicorn` workers on `${PORT:-8080}`
 
 The repo also includes:

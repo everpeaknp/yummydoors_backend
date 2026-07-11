@@ -16,52 +16,30 @@ depends_on = None
 
 
 def upgrade() -> None:
-    bind = op.get_bind()
-    rider_exists = bind.execute(sa.text("SELECT 1 FROM roles WHERE code = 'rider' LIMIT 1")).scalar()
-    if rider_exists:
-        bind.execute(
-            sa.text(
-                "UPDATE roles SET name = 'Rider', description = 'Delivery rider' WHERE code = 'rider'"
-            )
-        )
-        bind.execute(sa.text("DELETE FROM roles WHERE code = 'delivery_agent'"))
-        return
-
-    bind.execute(
+    op.execute(
         sa.text(
             """
             UPDATE roles
             SET code = 'rider',
                 name = 'Rider',
                 description = 'Delivery rider'
-            WHERE code = 'delivery_agent'
+            WHERE code IN ('delivery_agent', 'rider')
             """
         )
     )
+    op.execute(sa.text("DELETE FROM roles WHERE code = 'delivery_agent'"))
 
 
 def downgrade() -> None:
-    bind = op.get_bind()
-    delivery_agent_exists = bind.execute(
-        sa.text("SELECT 1 FROM roles WHERE code = 'delivery_agent' LIMIT 1")
-    ).scalar()
-    if delivery_agent_exists:
-        bind.execute(
-            sa.text(
-                "UPDATE roles SET name = 'Delivery Agent', description = 'Delivery rider or agent' WHERE code = 'delivery_agent'"
-            )
-        )
-        bind.execute(sa.text("DELETE FROM roles WHERE code = 'rider'"))
-        return
-
-    bind.execute(
+    op.execute(
         sa.text(
             """
             UPDATE roles
             SET code = 'delivery_agent',
                 name = 'Delivery Agent',
                 description = 'Delivery rider or agent'
-            WHERE code = 'rider'
+            WHERE code IN ('rider', 'delivery_agent')
             """
         )
     )
+    op.execute(sa.text("DELETE FROM roles WHERE code = 'rider'"))

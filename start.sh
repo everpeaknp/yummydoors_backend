@@ -79,7 +79,7 @@ export PYTHONPATH="${PYTHONPATH:-}:."
 source "$VENV_DIR/bin/activate"
 
 echo "Verifying database state..."
-if ! python -m alembic upgrade head; then
+if ! python -m alembic upgrade heads; then
     echo "ERROR: Failed to run Alembic migrations"
     exit 1
 fi

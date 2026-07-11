@@ -42,7 +42,7 @@ Use one image for all environments.
 Container startup should:
 
 1. start with production env vars
-2. run `alembic upgrade head`
+2. run `alembic upgrade heads`
 3. start `uvicorn` on port `8080`
 
 This keeps schema migration explicit and consistent across local, Cloud Run, and
