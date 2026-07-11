@@ -84,9 +84,6 @@ jobs:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
       - name: Write deploy key
         run: |
           mkdir -p ~/.ssh
@@ -114,16 +111,6 @@ jobs:
             -p "${{ env.VPS_PORT_NUMBER }}" \
             "${{ env.VPS_USERNAME }}@${{ env.VPS_HOSTNAME }}" "echo ssh-ok"
 
-      - name: Sync VPS compose file
-        run: |
-          scp -i ~/.ssh/yummydoors_deploy_key \
-            -o IdentitiesOnly=yes \
-            -o BatchMode=yes \
-            -o StrictHostKeyChecking=yes \
-            -P "${{ env.VPS_PORT_NUMBER }}" \
-            "${{ github.workspace }}/vps-docker-compose.yml" \
-            "${{ env.VPS_USERNAME }}@${{ env.VPS_HOSTNAME }}:${{ env.VPS_APP_PATH }}/docker-compose.yml"
-
       - name: Deploy exact image on server
         run: |
           ssh -i ~/.ssh/yummydoors_deploy_key \
@@ -135,7 +122,7 @@ jobs:
           cd "${{ env.VPS_APP_PATH }}"
           docker pull "${{ env.IMAGE_NAME }}:${{ github.sha }}"
           docker tag "${{ env.IMAGE_NAME }}:${{ github.sha }}" "${{ env.IMAGE_NAME }}:latest"
-          docker compose up -d --force-recreate --remove-orphans app worker redis watchtower
+          docker compose up -d --force-recreate --remove-orphans app
           docker compose ps
           end=$((SECONDS + 300))
           while [ "$SECONDS" -lt "$end" ]; do
@@ -147,6 +134,6 @@ jobs:
             sleep 5
           done
           echo "Timed out waiting for yummydoors_app to become healthy"
-          docker compose logs --tail=120 app worker redis postgres watchtower
+          docker compose logs --tail=120 app postgres
           exit 1
           EOF
