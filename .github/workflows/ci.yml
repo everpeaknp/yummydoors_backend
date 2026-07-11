@@ -124,6 +124,7 @@ jobs:
           cd "${{ env.VPS_APP_PATH }}"
           docker pull "${{ env.IMAGE_NAME }}:${{ github.sha }}"
           docker tag "${{ env.IMAGE_NAME }}:${{ github.sha }}" "${{ env.IMAGE_NAME }}:latest"
+          expected_image_id="$(docker image inspect --format '{{.Id}}' "${{ env.IMAGE_NAME }}:${{ github.sha }}")"
           available_services="$(docker compose config --services)"
           set -- app
           for service in worker redis watchtower; do
@@ -132,6 +133,12 @@ jobs:
             fi
           done
           docker compose up -d --force-recreate --remove-orphans "$@"
+          running_image_id="$(docker inspect -f '{{.Image}}' yummydoors_app)"
+          if [ "$running_image_id" != "$expected_image_id" ]; then
+            echo "ERROR: yummydoors_app is running image $running_image_id but expected $expected_image_id"
+            docker inspect yummydoors_app
+            exit 1
+          fi
           docker compose ps
           end=$((SECONDS + 300))
           while [ "$SECONDS" -lt "$end" ]; do
