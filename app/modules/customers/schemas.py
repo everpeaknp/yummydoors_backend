@@ -87,5 +87,10 @@ class CustomerProfileResponse(BaseModel):
     default_address_id: Optional[int]
     saved_addresses_count: int = 0
     default_address: Optional[CustomerAddressResponse] = None
+    total_orders: int = 0
+    total_spent: float = 0.0
+    loyalty_points: int = 0
+    loyalty_points_earned: int = 0
+    loyalty_points_redeemed: int = 0
 
     model_config = ConfigDict(from_attributes=True)

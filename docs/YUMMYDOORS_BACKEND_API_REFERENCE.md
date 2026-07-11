@@ -53,6 +53,17 @@ Important note:
 - `GET /api/v1/orders`
 - `GET /api/v1/orders/{order_id}`
 - `POST /api/v1/orders/checkout/{cart_id}`
+- `GET /api/v1/orders/merchant/me`
+- `GET /api/v1/orders/merchant/riders`
+- `POST /api/v1/orders/merchant/{order_id}/assign-rider`
+- `PATCH /api/v1/orders/merchant/{order_id}/status`
+- `GET /api/v1/orders/rider/me`
+- `POST /api/v1/orders/rider/{order_id}/claim`
+- `PATCH /api/v1/orders/rider/{order_id}/picked-up`
+- `PATCH /api/v1/orders/rider/{order_id}/delivered`
+- `GET /api/v1/orders/ws/merchant`
+- `GET /api/v1/orders/ws/customer`
+- `GET /api/v1/orders/ws/rider`
 
 ## Reservations
 

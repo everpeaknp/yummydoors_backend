@@ -29,6 +29,7 @@ from app.modules.integrations.pos.lookup import lookup_pos_link_status
 from app.modules.integrations.pos.models import ExternalUserLink
 from app.modules.workspaces.schemas import WorkspaceSummary
 from app.modules.workspaces.service import WorkspaceService
+from app.tasks.notifications import send_password_reset_email_task
 from app.services.avatar_urls import normalize_avatar_url
 from app.utils.security import get_password_hash, verify_password
 
@@ -336,13 +337,17 @@ class AuthService:
             await self.repo.create_password_reset_code(reset_code)
             if user.email:
                 try:
-                    delivery = await send_password_reset_code(recipient=user.email, code=reset_code.code)
-                except Exception as exc:
-                    delivery = {
-                        "delivered": False,
-                        "channel": "email",
-                        "reason": f"smtp_error:{exc.__class__.__name__}",
-                    }
+                    send_password_reset_email_task.delay(recipient=user.email, code=reset_code.code)
+                    delivery = {"delivered": True, "channel": "email", "reason": None}
+                except Exception:
+                    try:
+                        delivery = await send_password_reset_code(recipient=user.email, code=reset_code.code)
+                    except Exception as smtp_exc:
+                        delivery = {
+                            "delivered": False,
+                            "channel": "email",
+                            "reason": f"smtp_error:{smtp_exc.__class__.__name__}",
+                        }
             else:
                 delivery = {
                     "delivered": False,

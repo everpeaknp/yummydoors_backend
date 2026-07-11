@@ -31,6 +31,7 @@ class Order(Base, TimestampMixin):
     customer_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     restaurant_id: Mapped[int] = mapped_column(ForeignKey("restaurants.id", ondelete="CASCADE"), nullable=False)
     address_id: Mapped[int | None] = mapped_column(ForeignKey("customer_addresses.id", ondelete="SET NULL"), nullable=True)
+    rider_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     order_number: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
     status: Mapped[OrderStatus] = mapped_column(SQLEnum(OrderStatus), default=OrderStatus.placed, nullable=False)
     total_price: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
@@ -60,6 +61,7 @@ class Order(Base, TimestampMixin):
     customer: Mapped["User"] = relationship(foreign_keys=[customer_id])
     restaurant: Mapped["Restaurant"] = relationship(foreign_keys=[restaurant_id])
     address: Mapped["CustomerAddress | None"] = relationship(foreign_keys=[address_id])
+    rider: Mapped["User | None"] = relationship(foreign_keys=[rider_user_id])
     items: Mapped[list["OrderItem"]] = relationship(back_populates="order", cascade="all, delete-orphan")
 
 

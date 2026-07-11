@@ -188,7 +188,7 @@ def upgrade() -> None:
             {"code": "restaurant_owner", "name": "Restaurant Owner", "scope_type": "restaurant", "description": "Restaurant owner in YummyDoors", "is_system_role": True},
             {"code": "restaurant_admin", "name": "Restaurant Admin", "scope_type": "restaurant", "description": "Restaurant dashboard admin", "is_system_role": True},
             {"code": "restaurant_staff", "name": "Restaurant Staff", "scope_type": "restaurant", "description": "Restaurant dashboard staff", "is_system_role": True},
-            {"code": "delivery_agent", "name": "Delivery Agent", "scope_type": "global", "description": "Delivery rider or agent", "is_system_role": True},
+            {"code": "rider", "name": "Rider", "scope_type": "global", "description": "Delivery rider", "is_system_role": True},
             {"code": "ops_admin", "name": "Operations Admin", "scope_type": "global", "description": "Operations admin", "is_system_role": True},
             {"code": "super_admin", "name": "Super Admin", "scope_type": "global", "description": "System super admin", "is_system_role": True},
         ],

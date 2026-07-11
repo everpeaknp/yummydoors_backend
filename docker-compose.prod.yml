@@ -1,4 +1,15 @@
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: yummydoors_redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
   app:
     build:
       context: .
@@ -13,12 +24,15 @@ services:
       YUMMYDOORS_POSTGRES_PORT: ${YUMMYDOORS_POSTGRES_PORT:-5432}
       YUMMYDOORS_POSTGRES_DB: ${YUMMYDOORS_POSTGRES_DB:-yummydoors}
       YUMMYDOORS_POSTGRES_USER: ${YUMMYDOORS_POSTGRES_USER:-postgres}
+      YUMMYDOORS_REDIS_URL: ${YUMMYDOORS_REDIS_URL:-redis://redis:6379/0}
       RUN_MIGRATIONS: ${RUN_MIGRATIONS:-1}
       WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
       GUNICORN_TIMEOUT: ${GUNICORN_TIMEOUT:-120}
       GUNICORN_GRACEFUL_TIMEOUT: ${GUNICORN_GRACEFUL_TIMEOUT:-30}
       GUNICORN_KEEPALIVE: ${GUNICORN_KEEPALIVE:-5}
     depends_on:
+      redis:
+        condition: service_healthy
       postgres:
         condition: service_healthy
     ports:
@@ -33,6 +47,27 @@ services:
       timeout: 5s
       retries: 5
       start_period: 40s
+
+  worker:
+    build:
+      context: .
+    image: yummydoors-backend:latest
+    container_name: yummydoors_worker
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      YUMMYDOORS_POSTGRES_HOST: ${YUMMYDOORS_POSTGRES_HOST:-postgres}
+      YUMMYDOORS_POSTGRES_PORT: ${YUMMYDOORS_POSTGRES_PORT:-5432}
+      YUMMYDOORS_POSTGRES_DB: ${YUMMYDOORS_POSTGRES_DB:-yummydoors}
+      YUMMYDOORS_POSTGRES_USER: ${YUMMYDOORS_POSTGRES_USER:-postgres}
+      YUMMYDOORS_REDIS_URL: ${YUMMYDOORS_REDIS_URL:-redis://redis:6379/0}
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    command: celery -A app.celery_app:celery_app worker --loglevel=info --concurrency=${CELERY_CONCURRENCY:-1}
 
   postgres:
     image: postgres:16-alpine

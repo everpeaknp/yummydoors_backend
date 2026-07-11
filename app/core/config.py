@@ -20,6 +20,13 @@ class Settings(BaseSettings):
     refresh_token_expire_minutes: int = 60 * 24 * 7
     reset_code_expire_minutes: int = 10
     debug_expose_reset_code: bool = True
+    redis_url: str = Field(
+        default="redis://localhost:6379/0",
+        validation_alias=AliasChoices(
+            "REDIS_URL",
+            "YUMMYDOORS_REDIS_URL",
+        ),
+    )
 
     smtp_host: str | None = None
     smtp_port: int = 587

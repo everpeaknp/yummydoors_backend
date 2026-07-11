@@ -1,10 +1,12 @@
+import logging
 from datetime import UTC, datetime
-
 from fastapi import HTTPException, status
 from sqlalchemy import and_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.modules.auth.models import User, UserRole
+from app.modules.analytics.service import apply_completed_order_loyalty
 from app.modules.carts.models import Cart, CartItem, CartStatus
 from app.modules.carts.repository import CartRepository
 from app.modules.catalog.models import MenuItem
@@ -21,6 +23,8 @@ from app.modules.orders.schemas import (
     OrderSummaryResponse,
     OrderTimelineEvent,
     MerchantOrderResponse,
+    RiderSummaryResponse,
+    UserSnapshot,
 )
 
 
@@ -32,18 +36,56 @@ class OrderService:
 
     @staticmethod
     def _build_timeline(order: Order) -> list[OrderTimelineEvent]:
-        state_order = {
-            OrderStatus.placed: 1,
-            OrderStatus.preparing: 2,
-            OrderStatus.delivered: 5,
-            OrderStatus.cancelled: 6,
-            OrderStatus.toPay: 0,
-        }
-        current_rank = state_order.get(order.status, 1)
+        if order.status == OrderStatus.cancelled:
+            return [
+                OrderTimelineEvent(
+                    key="placed",
+                    label="Order confirmed",
+                    state="completed",
+                    timestamp=order.confirmed_at or order.created_at,
+                    description="The restaurant has received your order.",
+                ),
+                OrderTimelineEvent(
+                    key="preparing",
+                    label="Food is preparing",
+                    state="cancelled",
+                    timestamp=order.preparing_at,
+                    description="Your food was not prepared because the order was cancelled.",
+                ),
+                OrderTimelineEvent(
+                    key="rider_assigned",
+                    label="Rider assigned",
+                    state="cancelled",
+                    timestamp=order.rider_assigned_at,
+                    description="No rider was assigned before cancellation.",
+                ),
+                OrderTimelineEvent(
+                    key="picked_up",
+                    label="Pickup complete",
+                    state="cancelled",
+                    timestamp=order.picked_up_at,
+                    description="The order was cancelled before pickup.",
+                ),
+                OrderTimelineEvent(
+                    key="delivered",
+                    label="Delivered",
+                    state="cancelled",
+                    timestamp=order.delivered_at,
+                    description="The order was cancelled before delivery.",
+                ),
+            ]
 
-        def event_state(rank: int, key: str) -> str:
-            if order.status == OrderStatus.cancelled and key != "placed":
-                return "cancelled"
+        current_rank = 1
+        if order.delivered_at or order.status == OrderStatus.delivered:
+            current_rank = 5
+        elif order.picked_up_at:
+            current_rank = 4
+        elif order.rider_assigned_at:
+            current_rank = 3
+        elif order.preparing_at or order.status == OrderStatus.preparing:
+            current_rank = 2
+
+        def event_state(rank: int) -> str:
             if rank < current_rank:
                 return "completed"
             if rank == current_rank:
@@ -54,39 +96,50 @@ class OrderService:
             OrderTimelineEvent(
                 key="placed",
                 label="Order confirmed",
-                state="completed",
+                state=event_state(1),
                 timestamp=order.confirmed_at or order.created_at,
                 description="The restaurant has received your order.",
             ),
             OrderTimelineEvent(
                 key="preparing",
                 label="Food is preparing",
-                state=event_state(2, "preparing"),
+                state=event_state(2),
                 timestamp=order.preparing_at,
                 description="Your food is being freshly prepared.",
             ),
             OrderTimelineEvent(
                 key="rider_assigned",
                 label="Rider assigned",
-                state=event_state(3, "rider_assigned"),
+                state=event_state(3),
                 timestamp=order.rider_assigned_at,
                 description="A rider has been assigned to your order.",
             ),
             OrderTimelineEvent(
                 key="picked_up",
                 label="Pickup complete",
-                state=event_state(4, "picked_up"),
+                state=event_state(4),
                 timestamp=order.picked_up_at,
                 description="Your rider has picked up the order.",
             ),
             OrderTimelineEvent(
                 key="delivered",
                 label="Delivered",
-                state=event_state(5, "delivered"),
+                state=event_state(5),
                 timestamp=order.delivered_at,
                 description="Your order has been delivered successfully.",
             ),
         ]
+
+    @staticmethod
+    def _snapshot_user(user: User | None) -> UserSnapshot | None:
+        if user is None:
+            return None
+        return UserSnapshot(
+            id=user.id,
+            full_name=user.full_name,
+            phone=user.phone,
+            avatar_url=user.avatar_url,
+        )
 
     def _format_order_response(self, order: Order) -> OrderResponse:
         items = [
@@ -138,9 +191,16 @@ class OrderService:
             orderNumber=order.order_number,
             paymentMethod=order.payment_method,
             address=address,
+            rider=self._snapshot_user(order.rider),
             needsCutlery=order.needs_cutlery,
             cookingRequest=order.cooking_request,
             deliveryInstruction=order.delivery_instruction,
+            confirmedAt=order.confirmed_at,
+            preparingAt=order.preparing_at,
+            riderAssignedAt=order.rider_assigned_at,
+            pickedUpAt=order.picked_up_at,
+            deliveredAt=order.delivered_at,
+            cancelledAt=order.cancelled_at,
             pricing=OrderPricingBreakdown(
                 items_total=items_total,
                 coupon_discount=order.coupon_discount,
@@ -151,6 +211,51 @@ class OrderService:
                 total_amount=order.total_price,
             ),
             timeline=self._build_timeline(order),
+        )
+
+    def _format_merchant_order_response(self, order: Order) -> MerchantOrderResponse:
+        items = [
+            OrderItemResponse(name=item.name, price=item.price, quantity=item.quantity)
+            for item in order.items
+        ]
+        address = None
+        if any(
+            [
+                order.address_id,
+                order.delivery_recipient_name,
+                order.delivery_phone_number,
+                order.delivery_address_text,
+            ]
+        ):
+            address = OrderAddressSnapshot(
+                id=order.address_id,
+                recipient_name=order.delivery_recipient_name,
+                phone_number=order.delivery_phone_number,
+                address_text=order.delivery_address_text,
+                latitude=order.delivery_latitude,
+                longitude=order.delivery_longitude,
+            )
+
+        return MerchantOrderResponse(
+            id=order.id,
+            customerId=order.customer_id,
+            restaurantId=order.restaurant_id,
+            orderNumber=order.order_number,
+            restaurantName=order.restaurant.name if order.restaurant else "Unknown",
+            customerName=order.customer.full_name if order.customer else "Unknown",
+            date=order.created_at.strftime("%d/%m/%Y"),
+            status=order.status,
+            totalPrice=order.total_price,
+            items=items,
+            deliveryTime=order.estimated_delivery_window or "20-30 min",
+            address=address,
+            rider=self._snapshot_user(order.rider),
+            confirmedAt=order.confirmed_at,
+            preparingAt=order.preparing_at,
+            riderAssignedAt=order.rider_assigned_at,
+            pickedUpAt=order.picked_up_at,
+            deliveredAt=order.delivered_at,
+            cancelledAt=order.cancelled_at,
         )
 
     async def _get_checkout_cart(self, customer_id: int, cart_id: int) -> Cart | None:
@@ -254,11 +359,6 @@ class OrderService:
                 .values(popularity_score=MenuItem.popularity_score + qty)
             )
 
-        if order.status == OrderStatus.placed:
-            order.preparing_at = datetime.now(UTC)
-            await self.session.commit()
-            await self.session.refresh(order)
-
         order = await self.repo.get_order_by_id(order.id, customer_id)
         if order is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
@@ -342,59 +442,70 @@ class OrderService:
         return OrderSummaryResponse(items=response_items, pricing=pricing)
 
     async def get_merchant_orders(self, merchant_user_id: int) -> list[MerchantOrderResponse]:
-        # Get active workspace restaurant for user
-        from app.modules.workspaces.repository import WorkspaceRepository
-        
-        workspace_repo = WorkspaceRepository(self.session)
-        workspace = await workspace_repo.get_active_workspace(merchant_user_id)
-        if not workspace or workspace.workspace_type != "merchant":
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Active workspace is not a merchant workspace.")
-            
-        restaurant_id = workspace.primary_restaurant_id
-        if not restaurant_id:
+        restaurant_id = await self._get_active_merchant_restaurant_id(merchant_user_id)
+        if restaurant_id is None:
             return []
 
-        # We'll use a direct select because the repo get_all might not be optimized for this
         stmt = (
             select(Order)
-            .options(selectinload(Order.items), selectinload(Order.customer), selectinload(Order.restaurant))
+            .options(
+                selectinload(Order.items),
+                selectinload(Order.customer),
+                selectinload(Order.restaurant),
+                selectinload(Order.address),
+                selectinload(Order.rider),
+            )
             .where(Order.restaurant_id == restaurant_id)
             .order_by(Order.created_at.desc())
         )
         result = await self.session.execute(stmt)
         orders = result.scalars().all()
 
-        responses = []
-        for order in orders:
-            items = [
-                OrderItemResponse(name=item.name, price=item.price, quantity=item.quantity)
-                for item in order.items
-            ]
-            responses.append(
-                MerchantOrderResponse(
-                    id=order.id,
-                    customerId=order.customer_id,
-                    restaurantId=order.restaurant_id,
-                    orderNumber=order.order_number,
-                    restaurantName=order.restaurant.name if order.restaurant else "Unknown",
-                    customerName=order.customer.full_name if order.customer else "Unknown",
-                    date=order.created_at.strftime("%d/%m/%Y"),
-                    status=order.status,
-                    totalPrice=order.total_price,
-                    items=items,
+        return [self._format_merchant_order_response(order) for order in orders]
+
+    async def get_rider_orders(self, rider_user_id: int) -> list[MerchantOrderResponse]:
+        orders = await self.repo.get_orders_by_rider(rider_user_id)
+        return [self._format_merchant_order_response(order) for order in orders]
+
+    async def list_restaurant_riders(self, merchant_user_id: int) -> list[RiderSummaryResponse]:
+        restaurant_id = await self._get_active_merchant_restaurant_id(merchant_user_id)
+        if restaurant_id is None:
+            return []
+
+        stmt = (
+            select(User)
+            .options(
+                selectinload(User.roles).selectinload(UserRole.role),
+                selectinload(User.restaurant_assignments),
+            )
+            .where(User.is_active.is_(True))
+        )
+        result = await self.session.execute(stmt)
+        users = result.scalars().unique().all()
+
+        riders: list[RiderSummaryResponse] = []
+        for user in users:
+            if not self._user_has_rider_access(user, restaurant_id):
+                continue
+            riders.append(
+                RiderSummaryResponse(
+                    id=user.id,
+                    full_name=user.full_name,
+                    phone=user.phone,
+                    avatar_url=user.avatar_url,
+                    restaurant_ids=sorted(
+                        {
+                            assignment.restaurant_id
+                            for assignment in user.restaurant_assignments
+                            if assignment.restaurant_id is not None
+                        }
+                    ),
                 )
             )
-        return responses
+        return riders
 
     async def update_merchant_order_status(self, merchant_user_id: int, order_id: int, new_status: OrderStatus) -> MerchantOrderResponse:
-        from app.modules.workspaces.repository import WorkspaceRepository
-        workspace_repo = WorkspaceRepository(self.session)
-        workspace = await workspace_repo.get_active_workspace(merchant_user_id)
-        
-        if not workspace or workspace.workspace_type != "merchant":
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Active workspace is not a merchant workspace.")
-            
-        restaurant_id = workspace.primary_restaurant_id
+        restaurant_id = await self._get_active_merchant_restaurant_id(merchant_user_id)
         if not restaurant_id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No active restaurant context.")
 
@@ -405,6 +516,7 @@ class OrderService:
         if order.restaurant_id != restaurant_id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to modify this order.")
 
+        previous_status = order.status
         # Update order status
         order.status = new_status
         now = datetime.now(UTC)
@@ -416,32 +528,174 @@ class OrderService:
         elif new_status == OrderStatus.cancelled:
             order.cancelled_at = now
 
+        if new_status == OrderStatus.delivered and previous_status != OrderStatus.delivered:
+            try:
+                await apply_completed_order_loyalty(self.session, order)
+            except Exception:
+                logging.getLogger("yummy.order").exception(
+                    "Failed to update customer loyalty for order %s", order.id
+                )
+
         await self.session.commit()
         await self.session.refresh(order)
-        
-        # We need to manually load relationships for response
+        order = await self.repo.get_by_id(order_id)
+        if order is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found.")
+        return self._format_merchant_order_response(order)
+
+    async def assign_rider_to_order(
+        self,
+        merchant_user_id: int,
+        order_id: int,
+        rider_user_id: int,
+    ) -> MerchantOrderResponse:
+        restaurant_id = await self._get_active_merchant_restaurant_id(merchant_user_id)
+        if not restaurant_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No active restaurant context.")
+
+        order = await self.repo.get_by_id(order_id)
+        if not order:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found.")
+        if order.restaurant_id != restaurant_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to modify this order.")
+        if order.status == OrderStatus.cancelled:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cancelled orders cannot be assigned.")
+        if order.status == OrderStatus.delivered:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Delivered orders cannot be assigned.")
+
+        rider = await self._load_user_with_roles(rider_user_id)
+        if rider is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rider not found.")
+        if not self._user_has_rider_access(rider, restaurant_id):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Selected rider is not assigned to this restaurant.")
+
+        now = datetime.now(UTC)
+        order.rider_user_id = rider_user_id
+        order.rider_assigned_at = now
+        if order.status == OrderStatus.placed:
+            order.status = OrderStatus.preparing
+            order.preparing_at = order.preparing_at or now
+
+        await self.session.commit()
+        await self.session.refresh(order)
+        order = await self.repo.get_by_id(order_id)
+        if order is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found.")
+        return self._format_merchant_order_response(order)
+
+    async def rider_claim_order(self, rider_user_id: int, order_id: int) -> MerchantOrderResponse:
+        order = await self.repo.get_by_id(order_id)
+        if not order:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found.")
+        if order.rider_user_id and order.rider_user_id != rider_user_id:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Order already assigned to another rider.")
+
+        rider = await self._load_user_with_roles(rider_user_id)
+        if rider is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rider not found.")
+        if not self._user_has_rider_access(rider, order.restaurant_id):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You are not assigned to this restaurant.")
+
+        now = datetime.now(UTC)
+        order.rider_user_id = rider_user_id
+        order.rider_assigned_at = order.rider_assigned_at or now
+        if order.status == OrderStatus.placed:
+            order.status = OrderStatus.preparing
+            order.preparing_at = order.preparing_at or now
+        await self.session.commit()
+        await self.session.refresh(order)
+        order = await self.repo.get_by_id(order_id)
+        if order is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found.")
+        return self._format_merchant_order_response(order)
+
+    async def rider_mark_picked_up(self, rider_user_id: int, order_id: int) -> MerchantOrderResponse:
+        order = await self.repo.get_by_id(order_id)
+        if not order:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found.")
+        if order.rider_user_id != rider_user_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This order is not assigned to you.")
+        if order.status == OrderStatus.cancelled:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cancelled orders cannot be updated.")
+        order.picked_up_at = order.picked_up_at or datetime.now(UTC)
+        await self.session.commit()
+        await self.session.refresh(order)
+        order = await self.repo.get_by_id(order_id)
+        if order is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found.")
+        return self._format_merchant_order_response(order)
+
+    async def rider_mark_delivered(self, rider_user_id: int, order_id: int) -> MerchantOrderResponse:
+        order = await self.repo.get_by_id(order_id)
+        if not order:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found.")
+        if order.rider_user_id != rider_user_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This order is not assigned to you.")
+        if order.status == OrderStatus.cancelled:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cancelled orders cannot be updated.")
+        previous_status = order.status
+        now = datetime.now(UTC)
+        order.picked_up_at = order.picked_up_at or now
+        order.delivered_at = now
+        order.status = OrderStatus.delivered
+        if previous_status != OrderStatus.delivered:
+            try:
+                await apply_completed_order_loyalty(self.session, order)
+            except Exception:
+                logging.getLogger("yummy.order").exception(
+                    "Failed to update customer loyalty for order %s", order.id
+                )
+        await self.session.commit()
+        await self.session.refresh(order)
+        order = await self.repo.get_by_id(order_id)
+        if order is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found.")
+        return self._format_merchant_order_response(order)
+
+    async def _get_active_merchant_restaurant_id(self, merchant_user_id: int) -> int | None:
+        from app.modules.workspaces.repository import WorkspaceRepository
+
+        workspace_repo = WorkspaceRepository(self.session)
+        workspace = await workspace_repo.get_active_workspace(merchant_user_id)
+        if not workspace or workspace.workspace_type != "merchant":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Active workspace is not a merchant workspace.",
+            )
+        return workspace.primary_restaurant_id
+
+    async def _load_user_with_roles(self, user_id: int) -> User | None:
         stmt = (
-            select(Order)
-            .options(selectinload(Order.items), selectinload(Order.customer), selectinload(Order.restaurant))
-            .where(Order.id == order_id)
+            select(User)
+            .options(
+                selectinload(User.roles).selectinload(UserRole.role),
+                selectinload(User.restaurant_assignments),
+            )
+            .where(User.id == user_id)
         )
         result = await self.session.execute(stmt)
-        order = result.scalar_one()
+        return result.scalar_one_or_none()
 
-        items = [
-            OrderItemResponse(name=item.name, price=item.price, quantity=item.quantity)
-            for item in order.items
-        ]
-        
-        return MerchantOrderResponse(
-            id=order.id,
-            customerId=order.customer_id,
-            restaurantId=order.restaurant_id,
-            orderNumber=order.order_number,
-            restaurantName=order.restaurant.name if order.restaurant else "Unknown",
-            customerName=order.customer.full_name if order.customer else "Unknown",
-            date=order.created_at.strftime("%d/%m/%Y"),
-            status=order.status,
-            totalPrice=order.total_price,
-            items=items,
-        )
+    @staticmethod
+    def _user_has_rider_access(user: User, restaurant_id: int) -> bool:
+        role_codes = {user_role.role.code for user_role in user.roles}
+        if "rider" not in role_codes:
+            return False
+
+        scoped_restaurant_ids = {
+            user_role.restaurant_id
+            for user_role in user.roles
+            if user_role.role.code == "rider" and user_role.restaurant_id is not None
+        }
+        assignment_restaurant_ids = {
+            assignment.restaurant_id
+            for assignment in user.restaurant_assignments
+            if assignment.restaurant_id is not None and assignment.assignment_type == "rider"
+        }
+        active_restaurant_id = user.active_restaurant_id
+        all_restaurant_ids = scoped_restaurant_ids | assignment_restaurant_ids
+        if restaurant_id in all_restaurant_ids:
+            return True
+        if active_restaurant_id == restaurant_id:
+            return True
+        return False

@@ -74,6 +74,23 @@ async def test_popular_items_fall_back_to_manual_popularity_when_no_sales_exist(
     assert "menu_items.popularity_score DESC" in fallback_sql
 
 
+@pytest.mark.asyncio
+async def test_feed_menu_item_queries_eager_load_modifier_groups_for_summary_serialization():
+    session = _SessionRecorder([[object()], [object()], [object()]])
+    repository = CatalogRepository(session)
+
+    await repository.list_popular_items(limit=8)
+    await repository.list_featured_items(limit=8)
+    await repository.list_items_by_restaurants([1], limit=8)
+
+    assert len(session.statements) == 3
+    for statement in session.statements:
+        assert len(statement._with_options) == 1
+        option_path = str(statement._with_options[0].path)
+        assert "MenuItem.modifier_groups" in option_path
+        assert "MenuModifierGroup.items" in option_path
+
+
 def test_home_feed_exposes_flutter_filter_options():
     feed = HomeFeedResponse(
         location_context=HomeLocationContext(

@@ -40,6 +40,15 @@ class OrderTimelineEvent(BaseModel):
     description: str | None = None
 
 
+class UserSnapshot(BaseModel):
+    id: int
+    full_name: str
+    phone: str | None = None
+    avatar_url: str | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class OrderResponse(BaseModel):
     id: int
     restaurantId: int
@@ -54,9 +63,16 @@ class OrderResponse(BaseModel):
     orderNumber: str
     paymentMethod: str | None = None
     address: OrderAddressSnapshot | None = None
+    rider: UserSnapshot | None = None
     needsCutlery: bool = True
     cookingRequest: str | None = None
     deliveryInstruction: str | None = None
+    confirmedAt: datetime | None = None
+    preparingAt: datetime | None = None
+    riderAssignedAt: datetime | None = None
+    pickedUpAt: datetime | None = None
+    deliveredAt: datetime | None = None
+    cancelledAt: datetime | None = None
     pricing: OrderPricingBreakdown = Field(default_factory=OrderPricingBreakdown)
     timeline: list[OrderTimelineEvent] = Field(default_factory=list)
 
@@ -74,6 +90,29 @@ class MerchantOrderResponse(BaseModel):
     status: OrderStatus
     totalPrice: float
     items: list[OrderItemResponse]
+    deliveryTime: str | None = None
+    address: OrderAddressSnapshot | None = None
+    rider: UserSnapshot | None = None
+    confirmedAt: datetime | None = None
+    preparingAt: datetime | None = None
+    riderAssignedAt: datetime | None = None
+    pickedUpAt: datetime | None = None
+    deliveredAt: datetime | None = None
+    cancelledAt: datetime | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RiderAssignmentRequest(BaseModel):
+    rider_user_id: int
+
+
+class RiderSummaryResponse(BaseModel):
+    id: int
+    full_name: str
+    phone: str | None = None
+    avatar_url: str | None = None
+    restaurant_ids: list[int] = Field(default_factory=list)
 
     model_config = ConfigDict(from_attributes=True)
 

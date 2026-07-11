@@ -88,6 +88,7 @@ class OrderRepository:
             selectinload(Order.items),
             selectinload(Order.restaurant),
             selectinload(Order.address),
+            selectinload(Order.rider),
         ).where(Order.customer_id == customer_id).order_by(Order.created_at.desc())
         
         result = await self.session.execute(stmt)
@@ -98,6 +99,7 @@ class OrderRepository:
             selectinload(Order.items),
             selectinload(Order.restaurant),
             selectinload(Order.address),
+            selectinload(Order.rider),
         ).where(
             and_(Order.id == order_id, Order.customer_id == customer_id)
         )
@@ -110,6 +112,18 @@ class OrderRepository:
             selectinload(Order.restaurant),
             selectinload(Order.customer),
             selectinload(Order.address),
+            selectinload(Order.rider),
         ).where(Order.id == order_id)
         result = await self.session.execute(stmt)
         return result.scalars().first()
+
+    async def get_orders_by_rider(self, rider_user_id: int) -> List[Order]:
+        stmt = select(Order).options(
+            selectinload(Order.items),
+            selectinload(Order.restaurant),
+            selectinload(Order.customer),
+            selectinload(Order.address),
+            selectinload(Order.rider),
+        ).where(Order.rider_user_id == rider_user_id).order_by(Order.created_at.desc())
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())

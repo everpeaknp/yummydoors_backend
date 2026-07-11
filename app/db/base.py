@@ -11,6 +11,7 @@ import app.modules.reservations.models  # noqa: F401
 import app.modules.favorites.models  # noqa: F401
 import app.modules.messages.models  # noqa: F401
 import app.modules.notifications.models  # noqa: F401
+import app.modules.rider_applications.models  # noqa: F401
 
 from app.db.session import Base
 

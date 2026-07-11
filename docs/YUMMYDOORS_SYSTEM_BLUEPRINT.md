@@ -127,7 +127,12 @@ May eventually include:
 - dispatcher/ops dashboard
 - internal assignment tools
 
-Even before a rider app exists, backend delivery entities are still required.
+The backend already needs a rider lifecycle even before the rider app ships:
+
+- rider accounts are a separate operational role
+- merchants can assign riders to orders inside their restaurant scope
+- riders receive real-time order updates through websockets and push notifications
+- the customer order timeline should reflect rider assignment, pickup, and delivery
 
 ### Admin / ops team
 
@@ -424,6 +429,7 @@ Fields:
 - customer
 - restaurant_admin
 - restaurant_staff
+- rider
 - ops_admin
 - super_admin
 
@@ -871,7 +877,7 @@ Fields:
 
 ### `delivery_agents`
 
-Only needed if first-party or managed riders exist.
+Use this as the rider-facing operational identity layer when first-party or managed riders exist.
 
 - `id`
 - `full_name`
