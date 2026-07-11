@@ -14,9 +14,11 @@ from app.modules.integrations.pos.models import ExternalUserLink
 if TYPE_CHECKING:
     from app.modules.integrations.pos.models import ExternalUserLink
     from app.modules.restaurants.models import RestaurantUserAssignment
-    from app.modules.customers.models import CustomerAddress
     from app.modules.workspaces.models import MerchantApplication, Workspace, WorkspaceMembership
     from app.modules.rider_applications.models import RiderApplication
+
+from app.modules.customers.models import CustomerAddress
+from app.modules.rider_applications.models import RiderApplication
 
 
 class UserStatus(StrEnum):
@@ -74,7 +76,10 @@ class User(Base, TimestampMixin):
         back_populates="user", cascade="all, delete-orphan"
     )
     addresses: Mapped[list["CustomerAddress"]] = relationship(
-        "CustomerAddress", back_populates="user", cascade="all, delete-orphan", foreign_keys="[CustomerAddress.user_id]"
+        "CustomerAddress",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        foreign_keys=[CustomerAddress.user_id],
     )
     workspace_memberships: Mapped[list["WorkspaceMembership"]] = relationship(
         "WorkspaceMembership",
@@ -94,7 +99,7 @@ class User(Base, TimestampMixin):
         "RiderApplication",
         back_populates="user",
         cascade="all, delete-orphan",
-        foreign_keys="[RiderApplication.user_id]",
+        foreign_keys=[RiderApplication.user_id],
     )
 
     __table_args__ = (
