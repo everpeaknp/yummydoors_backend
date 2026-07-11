@@ -9,6 +9,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
 from app.models.mixins import TimestampMixin
+from app.modules.integrations.pos.models import ExternalUserLink
 
 if TYPE_CHECKING:
     from app.modules.integrations.pos.models import ExternalUserLink
