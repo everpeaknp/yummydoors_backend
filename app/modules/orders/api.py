@@ -478,10 +478,7 @@ async def update_merchant_order_status(
     updated = await service.update_merchant_order_status(current_user.id, order_id, new_status)
 
     customer_payload = build_customer_order_event(updated, status_value=new_status.value)
-    from app.modules.workspaces.repository import WorkspaceRepository
-    workspace_repo = WorkspaceRepository(db)
-    workspace = await workspace_repo.get_active_workspace(current_user.id)
-    merchant_restaurant_id = workspace.primary_restaurant_id if workspace and workspace.primary_restaurant_id else None
+    merchant_restaurant_id = updated.restaurantId
     merchant_payload = build_merchant_order_event(
         order_id=updated.id,
         order_number=updated.orderNumber,
@@ -607,6 +604,34 @@ def _with_rider_scope(payload: dict, rider_user_id: int | None) -> dict:
     return next_payload
 
 
+def _resolve_merchant_restaurant_id_from_claims(
+    *,
+    payload: dict,
+    workspace,
+    user,
+) -> int | None:
+    if workspace and workspace.workspace_type == "merchant" and workspace.primary_restaurant_id:
+        return workspace.primary_restaurant_id
+
+    token_restaurant_id = payload.get("restaurant_id")
+    if isinstance(token_restaurant_id, int) and token_restaurant_id > 0:
+        return token_restaurant_id
+
+    token_restaurant_ids = payload.get("restaurant_ids")
+    if isinstance(token_restaurant_ids, list):
+        for item in token_restaurant_ids:
+            if isinstance(item, int) and item > 0:
+                return item
+            if isinstance(item, str) and item.isdigit():
+                return int(item)
+
+    active_restaurant_id = getattr(user, "active_restaurant_id", None)
+    if isinstance(active_restaurant_id, int) and active_restaurant_id > 0:
+        return active_restaurant_id
+
+    return None
+
+
 @router.websocket("/ws/merchant")
 async def ws_merchant_orders(
     websocket: WebSocket,
@@ -633,23 +658,21 @@ async def ws_merchant_orders(
         await websocket.close(code=4001)
         return
 
-    restaurant_id = None
     from app.modules.workspaces.repository import WorkspaceRepository
     workspace_repo = WorkspaceRepository(db)
     workspace = await workspace_repo.get_active_workspace(user_id)
-    if workspace and workspace.workspace_type == "merchant" and workspace.primary_restaurant_id:
-        restaurant_id = workspace.primary_restaurant_id
-    else:
-        token_restaurant_id = payload.get("restaurant_id")
-        if isinstance(token_restaurant_id, int) and token_restaurant_id > 0:
-            restaurant_id = token_restaurant_id
+    restaurant_id = _resolve_merchant_restaurant_id_from_claims(
+        payload=payload,
+        workspace=workspace,
+        user=user,
+    )
 
     if not restaurant_id:
         logger.warning(
             "merchant websocket rejected user_id=%s active_workspace=%s token_restaurant_id=%s",
             user_id,
             getattr(workspace, "workspace_type", None),
-            payload.get("restaurant_id"),
+            payload.get("restaurant_id") or payload.get("restaurant_ids"),
         )
         await websocket.close(code=4003)
         return

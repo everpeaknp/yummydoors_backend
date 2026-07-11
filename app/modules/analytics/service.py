@@ -277,6 +277,9 @@ def _build_item_breakdown(
             "name": "",
             "orders_count": 0,
             "quantity": 0,
+            "net_quantity": 0,
+            "cancelled_quantity": 0,
+            "pending_quantity": 0,
             "gross_spend": Decimal("0"),
             "net_spend": Decimal("0"),
             "cancelled_spend": Decimal("0"),
@@ -287,8 +290,8 @@ def _build_item_breakdown(
         key = key_getter(row)
         bucket = buckets[key]
         if not bucket["name"]:
-            bucket["id"] = row.category_id if row.category_id is not None else row.menu_item_id
-            bucket["name"] = row.category_name or row.item_name
+            bucket["id"] = key[0]
+            bucket["name"] = key[1]
         bucket["orders_count"] += 1
         bucket["quantity"] += row.quantity
         amount = _allocate_item_spend(row)

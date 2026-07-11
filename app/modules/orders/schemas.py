@@ -54,6 +54,8 @@ class OrderResponse(BaseModel):
     restaurantId: int
     restaurantName: str
     restaurantSlug: str
+    restaurantLatitude: float | None = None
+    restaurantLongitude: float | None = None
     restaurantTags: str
     restaurantLogo: str
     deliveryTime: str
@@ -85,6 +87,9 @@ class MerchantOrderResponse(BaseModel):
     restaurantId: int
     orderNumber: str
     restaurantName: str
+    restaurantSlug: str | None = None
+    restaurantLatitude: float | None = None
+    restaurantLongitude: float | None = None
     customerName: str
     date: str
     status: OrderStatus

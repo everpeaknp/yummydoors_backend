@@ -5,7 +5,7 @@ import logging
 from urllib.parse import quote_plus
 from typing import TYPE_CHECKING
 
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import decode_token
@@ -15,7 +15,7 @@ from app.modules.auth.models import User
 from app.modules.auth.repository import AuthRepository
 from app.modules.auth.service import AuthService
 from app.modules.messages.repository import MessageRepository
-from app.modules.messages.schemas import ConversationSummary, MessageCreate, MessageResponse
+from app.modules.messages.schemas import ConversationSummary, MessageCreate, MessagePageResponse, MessageResponse
 from app.modules.realtime.bus import (
     MESSAGE_CUSTOMER_CHANNEL,
     MESSAGE_MERCHANT_CHANNEL,
@@ -130,9 +130,11 @@ async def list_conversations(
     return results
 
 
-@router.get("/merchant/{customer_id}", response_model=list[MessageResponse])
+@router.get("/merchant/{customer_id}", response_model=MessagePageResponse)
 async def get_conversation(
     customer_id: int,
+    limit: int = Query(default=30, ge=1, le=100),
+    before_message_id: int | None = Query(default=None, ge=1),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -140,19 +142,27 @@ async def get_conversation(
     repo = MessageRepository(db)
     # Mark incoming customer messages as read
     await repo.mark_conversation_read(restaurant_id, customer_id)
-    messages = await repo.get_conversation(restaurant_id, customer_id)
+    messages, has_more = await repo.get_conversation_page(
+        restaurant_id,
+        customer_id,
+        limit=limit,
+        before_message_id=before_message_id,
+    )
 
-    return [
-        MessageResponse(
-            id=m.id,
-            content=m.content,
-            is_from_merchant=m.is_from_merchant,
-            sender_name=m.sender.full_name if m.sender else "Unknown",
-            created_at=m.created_at,
-            read_at=m.read_at,
-        )
-        for m in messages
-    ]
+    return MessagePageResponse(
+        items=[
+            MessageResponse(
+                id=m.id,
+                content=m.content,
+                is_from_merchant=m.is_from_merchant,
+                sender_name=m.sender.full_name if m.sender else "Unknown",
+                created_at=m.created_at,
+                read_at=m.read_at,
+            )
+            for m in messages
+        ],
+        has_more=has_more,
+    )
 
 
 @router.post("/merchant/{customer_id}", response_model=MessageResponse)
@@ -262,27 +272,37 @@ async def list_customer_conversations(
     return results
 
 
-@router.get("/customer/{restaurant_id}", response_model=list[MessageResponse])
+@router.get("/customer/{restaurant_id}", response_model=MessagePageResponse)
 async def get_customer_conversation(
     restaurant_id: int,
+    limit: int = Query(default=30, ge=1, le=100),
+    before_message_id: int | None = Query(default=None, ge=1),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     repo = MessageRepository(db)
     await repo.mark_customer_conversation_read(current_user.id, restaurant_id)
-    messages = await repo.get_conversation(restaurant_id, current_user.id)
+    messages, has_more = await repo.get_conversation_page(
+        restaurant_id,
+        current_user.id,
+        limit=limit,
+        before_message_id=before_message_id,
+    )
 
-    return [
-        MessageResponse(
-            id=m.id,
-            content=m.content,
-            is_from_merchant=m.is_from_merchant,
-            sender_name=m.sender.full_name if m.sender else "Unknown",
-            created_at=m.created_at,
-            read_at=m.read_at,
-        )
-        for m in messages
-    ]
+    return MessagePageResponse(
+        items=[
+            MessageResponse(
+                id=m.id,
+                content=m.content,
+                is_from_merchant=m.is_from_merchant,
+                sender_name=m.sender.full_name if m.sender else "Unknown",
+                created_at=m.created_at,
+                read_at=m.read_at,
+            )
+            for m in messages
+        ],
+        has_more=has_more,
+    )
 
 
 @router.post("/customer/{restaurant_id}", response_model=MessageResponse)

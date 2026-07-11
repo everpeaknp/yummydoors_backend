@@ -53,6 +53,11 @@ class ChangePasswordRequest(BaseModel):
     new_password: str = Field(min_length=8, max_length=128)
 
 
+class RiderLocationUpdateRequest(BaseModel):
+    latitude: float
+    longitude: float
+
+
 class GoogleLoginRequest(BaseModel):
     credential: str = Field(min_length=20)
 
@@ -92,6 +97,9 @@ class UserSummary(BaseModel):
     email: str | None
     phone: str | None
     avatar_url: str | None = None
+    current_latitude: float | None = None
+    current_longitude: float | None = None
+    current_location_updated_at: datetime | None = None
     status: str
     is_verified: bool
     roles: list[RoleSummary]

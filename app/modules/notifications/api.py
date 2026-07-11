@@ -71,6 +71,70 @@ async def _resolve_merchant_restaurant_id(
     return workspace.primary_restaurant_id
 
 
+async def _list_notifications_internal(
+    *,
+    current_user: User,
+    db: AsyncSession,
+    audience: str | None,
+    restaurant_id: int | None,
+    unread_only: bool,
+    include_dismissed: bool,
+    limit: int,
+    offset: int,
+):
+    service = NotificationService(db)
+    resolved_restaurant_id = await _resolve_merchant_restaurant_id(
+        current_user=current_user,
+        db=db,
+        audience=audience,
+        restaurant_id=restaurant_id,
+    )
+    records = await service.list_notifications(
+        recipient_user_id=current_user.id,
+        audience=audience,
+        restaurant_id=resolved_restaurant_id,
+        unread_only=unread_only,
+        include_dismissed=include_dismissed,
+        limit=limit,
+        offset=offset,
+    )
+    return ApiResponse(
+        message="Notifications fetched successfully.",
+        data=[_to_notification_response(record) for record in records],
+    )
+
+
+async def _unread_count_internal(
+    *,
+    current_user: User,
+    db: AsyncSession,
+    audience: str | None,
+    restaurant_id: int | None,
+):
+    service = NotificationService(db)
+    resolved_restaurant_id = await _resolve_merchant_restaurant_id(
+        current_user=current_user,
+        db=db,
+        audience=audience,
+        restaurant_id=restaurant_id,
+    )
+    unread_count = await service.count_notifications(
+        recipient_user_id=current_user.id,
+        audience=audience,
+        restaurant_id=resolved_restaurant_id,
+        unread_only=True,
+    )
+    total_count = await service.count_notifications(
+        recipient_user_id=current_user.id,
+        audience=audience,
+        restaurant_id=resolved_restaurant_id,
+    )
+    return ApiResponse(
+        message="Notification counts fetched successfully.",
+        data=NotificationCountResponse(unread_count=unread_count, total_count=total_count),
+    )
+
+
 @webpush_router.get("/public-key", response_model=ApiResponse[WebPushPublicKeyResponse])
 async def get_web_push_public_key(db: AsyncSession = Depends(get_db)):
     service = NotificationService(db)
@@ -166,25 +230,38 @@ async def list_my_notifications(
     limit: int = 50,
     offset: int = 0,
 ):
-    service = NotificationService(db)
-    resolved_restaurant_id = await _resolve_merchant_restaurant_id(
+    return await _list_notifications_internal(
         current_user=current_user,
         db=db,
         audience=audience,
         restaurant_id=restaurant_id,
-    )
-    records = await service.list_notifications(
-        recipient_user_id=current_user.id,
-        audience=audience,
-        restaurant_id=resolved_restaurant_id,
         unread_only=unread_only,
         include_dismissed=include_dismissed,
         limit=limit,
         offset=offset,
     )
-    return ApiResponse(
-        message="Notifications fetched successfully.",
-        data=[_to_notification_response(record) for record in records],
+
+
+@router.get("/", response_model=ApiResponse[list[UserNotificationResponse]], include_in_schema=False)
+async def list_my_notifications_legacy(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    audience: str | None = None,
+    restaurant_id: int | None = None,
+    unread_only: bool = False,
+    include_dismissed: bool = False,
+    limit: int = 50,
+    offset: int = 0,
+):
+    return await _list_notifications_internal(
+        current_user=current_user,
+        db=db,
+        audience=audience,
+        restaurant_id=restaurant_id,
+        unread_only=unread_only,
+        include_dismissed=include_dismissed,
+        limit=limit,
+        offset=offset,
     )
 
 
@@ -195,27 +272,26 @@ async def get_my_notification_count(
     audience: str | None = None,
     restaurant_id: int | None = None,
 ):
-    service = NotificationService(db)
-    resolved_restaurant_id = await _resolve_merchant_restaurant_id(
+    return await _unread_count_internal(
         current_user=current_user,
         db=db,
         audience=audience,
         restaurant_id=restaurant_id,
     )
-    unread_count = await service.count_notifications(
-        recipient_user_id=current_user.id,
+
+
+@router.get("/unread-count", response_model=ApiResponse[NotificationCountResponse], include_in_schema=False)
+async def get_my_notification_count_legacy(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    audience: str | None = None,
+    restaurant_id: int | None = None,
+):
+    return await _unread_count_internal(
+        current_user=current_user,
+        db=db,
         audience=audience,
-        restaurant_id=resolved_restaurant_id,
-        unread_only=True,
-    )
-    total_count = await service.count_notifications(
-        recipient_user_id=current_user.id,
-        audience=audience,
-        restaurant_id=resolved_restaurant_id,
-    )
-    return ApiResponse(
-        message="Notification counts fetched successfully.",
-        data=NotificationCountResponse(unread_count=unread_count, total_count=total_count),
+        restaurant_id=restaurant_id,
     )
 
 

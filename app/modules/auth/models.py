@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, Numeric, String, UniqueConstraint
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, Numeric, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
@@ -44,6 +44,11 @@ class User(Base, TimestampMixin):
     loyalty_points: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     loyalty_points_earned: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     loyalty_points_redeemed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    current_latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    current_longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    current_location_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     default_address_id: Mapped[int | None] = mapped_column(ForeignKey("customer_addresses.id", ondelete="SET NULL", use_alter=True), nullable=True)
     active_restaurant_id: Mapped[int | None] = mapped_column(
         ForeignKey("restaurants.id", ondelete="SET NULL", use_alter=True),

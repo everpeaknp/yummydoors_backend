@@ -20,6 +20,11 @@ class MessageCreate(BaseModel):
     content: str
 
 
+class MessagePageResponse(BaseModel):
+    items: list[MessageResponse]
+    has_more: bool
+
+
 class ConversationSummary(BaseModel):
     customer_id: int
     customer_name: str

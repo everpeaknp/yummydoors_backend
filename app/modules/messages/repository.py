@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import and_, func, select, update
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -64,6 +64,55 @@ class MessageRepository:
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    async def get_conversation_page(
+        self,
+        restaurant_id: int,
+        customer_user_id: int,
+        *,
+        limit: int,
+        before_message_id: int | None = None,
+    ) -> tuple[list[Message], bool]:
+        cursor_created_at = None
+        if before_message_id is not None:
+            cursor_stmt = select(Message.id, Message.created_at).where(
+                Message.id == before_message_id,
+                Message.restaurant_id == restaurant_id,
+                Message.customer_user_id == customer_user_id,
+            )
+            cursor_result = await self.session.execute(cursor_stmt)
+            cursor_row = cursor_result.one_or_none()
+            if cursor_row is None:
+                return [], False
+            cursor_created_at = cursor_row.created_at
+
+        stmt = (
+            select(Message)
+            .options(selectinload(Message.sender))
+            .where(
+                Message.restaurant_id == restaurant_id,
+                Message.customer_user_id == customer_user_id,
+            )
+        )
+
+        if before_message_id is not None and cursor_created_at is not None:
+            stmt = stmt.where(
+                or_(
+                    Message.created_at < cursor_created_at,
+                    and_(
+                        Message.created_at == cursor_created_at,
+                        Message.id < before_message_id,
+                    ),
+                )
+            )
+
+        stmt = stmt.order_by(Message.created_at.desc(), Message.id.desc()).limit(limit + 1)
+        result = await self.session.execute(stmt)
+        records = list(result.scalars().all())
+        has_more = len(records) > limit
+        page = records[:limit]
+        page.reverse()
+        return page, has_more
 
     async def create_message(
         self,

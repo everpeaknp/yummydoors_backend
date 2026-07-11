@@ -12,6 +12,7 @@ from app.modules.auth.schemas import (
     PasswordResetRequest,
     RefreshRequest,
     RegisterRequest,
+    RiderLocationUpdateRequest,
     UserSummary,
 )
 from app.modules.auth.service import AuthService
@@ -118,3 +119,14 @@ async def me(
 ):
     data = await service.get_current_user_summary(user)
     return ApiResponse(message="Current user fetched successfully.", data=data)
+
+
+@router.patch("/me/rider-location", response_model=ApiResponse[UserSummary])
+async def update_rider_location(
+    payload: RiderLocationUpdateRequest,
+    request: Request,
+    user=Depends(get_current_user),
+    service: AuthService = Depends(get_auth_service),
+):
+    data = await service.update_rider_location(user, payload, request)
+    return ApiResponse(message="Rider location updated successfully.", data=data)

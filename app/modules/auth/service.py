@@ -23,6 +23,7 @@ from app.modules.auth.schemas import (
     PasswordResetConfirmRequest,
     PasswordResetRequest,
     RoleSummary,
+    RiderLocationUpdateRequest,
     UserSummary,
 )
 from app.modules.integrations.pos.lookup import lookup_pos_link_status
@@ -470,6 +471,22 @@ class AuthService:
         await self.repo.commit()
         return {"success": True}
 
+    async def update_rider_location(
+        self,
+        user: User,
+        payload: RiderLocationUpdateRequest,
+        request: Request | None = None,
+    ) -> UserSummary:
+        role_codes = {item.role.code for item in user.roles}
+        if "rider" not in role_codes:
+            raise HTTPException(status_code=403, detail="Rider access is required.")
+
+        user.current_latitude = payload.latitude
+        user.current_longitude = payload.longitude
+        user.current_location_updated_at = datetime.now(UTC)
+        await self.repo.commit()
+        return await self._build_user_summary(user)
+
     async def get_current_user(self, user_id: int) -> User:
         user = await self.repo.get_user_by_id(user_id)
         if user is None:
@@ -563,6 +580,9 @@ class AuthService:
             email=user.email,
             phone=user.phone,
             avatar_url=normalize_avatar_url(user.avatar_url),
+            current_latitude=user.current_latitude,
+            current_longitude=user.current_longitude,
+            current_location_updated_at=user.current_location_updated_at,
             status=user.status,
             is_verified=user.is_verified,
             roles=roles,

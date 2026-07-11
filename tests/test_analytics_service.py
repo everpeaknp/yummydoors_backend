@@ -9,6 +9,7 @@ import pytest
 from app.modules.analytics.service import (
     ItemAnalyticsRow,
     OrderAnalyticsRow,
+    _build_item_breakdown,
     _build_customer_breakdowns,
     apply_completed_order_loyalty,
     calculate_loyalty_points,
@@ -148,3 +149,49 @@ def test_customer_breakdowns_group_restaurants_categories_and_foods():
     assert category_breakdown[0].net_spend == 100.0
     assert food_breakdown[0].name == "Margherita Pizza"
     assert food_breakdown[0].quantity == 2
+
+
+def test_item_breakdown_handles_delivered_and_cancelled_quantities_without_key_errors():
+    item_rows = [
+        ItemAnalyticsRow(
+            order_id=1,
+            restaurant_id=10,
+            restaurant_name="Alpha",
+            status=OrderStatus.delivered,
+            order_total=Decimal("100.00"),
+            order_subtotal=Decimal("80.00"),
+            created_at=datetime(2026, 7, 10, 9, 0, tzinfo=UTC),
+            menu_item_id=1,
+            item_name="Margherita Pizza",
+            category_id=100,
+            category_name="Pizza",
+            quantity=2,
+            unit_price=Decimal("40.00"),
+        ),
+        ItemAnalyticsRow(
+            order_id=2,
+            restaurant_id=10,
+            restaurant_name="Alpha",
+            status=OrderStatus.cancelled,
+            order_total=Decimal("50.00"),
+            order_subtotal=Decimal("50.00"),
+            created_at=datetime(2026, 7, 11, 9, 0, tzinfo=UTC),
+            menu_item_id=1,
+            item_name="Margherita Pizza",
+            category_id=100,
+            category_name="Pizza",
+            quantity=1,
+            unit_price=Decimal("50.00"),
+        ),
+    ]
+
+    breakdown = _build_item_breakdown(
+        item_rows,
+        key_getter=lambda row: (row.menu_item_id, row.item_name),
+    )
+
+    assert len(breakdown) == 1
+    assert breakdown[0].name == "Margherita Pizza"
+    assert breakdown[0].quantity == 2
+    assert breakdown[0].net_spend == 100.0
+    assert breakdown[0].cancelled_spend == 50.0
