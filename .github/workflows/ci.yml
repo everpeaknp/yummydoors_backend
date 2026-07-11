@@ -142,11 +142,19 @@ jobs:
           docker compose ps
           end=$((SECONDS + 300))
           while [ "$SECONDS" -lt "$end" ]; do
-            status="$(docker inspect -f '{{.State.Health.Status}}' yummydoors_app 2>/dev/null || true)"
+            if curl -fsS http://127.0.0.1:8010/health >/dev/null 2>&1; then
+              echo "App is healthy via HTTP check!"
+              exit 0
+            fi
+            status="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{end}}' yummydoors_app 2>/dev/null || true)"
             if [ "$status" = "healthy" ]; then
-              if curl -fsS http://127.0.0.1:8010/health >/dev/null; then
-                exit 0
-              fi
+              echo "App is healthy via Docker!"
+              exit 0
+            fi
+            state="$(docker inspect -f '{{.State.Status}}' yummydoors_app 2>/dev/null || true)"
+            if [ "$state" = "exited" ] || [ "$state" = "dead" ]; then
+              echo "Container exited prematurely!"
+              break
             fi
             sleep 5
           done
