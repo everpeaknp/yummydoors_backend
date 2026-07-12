@@ -198,7 +198,7 @@ class RiderDispatchService:
             pass
         return self._build_offer_response(offer)
 
-    async def accept_offer(self, *, user: User, offer_id: int) -> OrderDispatchOfferResponse:
+    async def accept_offer(self, *, user: User, offer_id: int) -> RiderDispatchOfferResponse:
         offer = await self.session.get(OrderDispatchOffer, offer_id)
         if offer is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Offer not found.")
@@ -228,7 +228,7 @@ class RiderDispatchService:
         await self.session.refresh(offer)
         return self._build_offer_response(offer)
 
-    async def reject_offer(self, *, user: User, offer_id: int) -> OrderDispatchOfferResponse:
+    async def reject_offer(self, *, user: User, offer_id: int) -> RiderDispatchOfferResponse:
         offer = await self.session.get(OrderDispatchOffer, offer_id)
         if offer is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Offer not found.")

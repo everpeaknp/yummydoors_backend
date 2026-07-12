@@ -1,3 +1,4 @@
+# ruff: noqa: F403
 import sys
 import os
 
