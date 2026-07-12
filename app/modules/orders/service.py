@@ -573,8 +573,17 @@ class OrderService:
         rider = await self._load_user_with_roles(rider_user_id)
         if rider is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rider not found.")
+        
         if not self._user_has_rider_access(rider, restaurant_id):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Selected rider is not assigned to this restaurant.")
+            if rider.rider_work_mode == "freelance":
+                dispatch_service = RiderDispatchService(self.session)
+                await dispatch_service.dispatch_manual_offer(order=order, restaurant=order.restaurant, rider_user_id=rider_user_id)
+                order = await self.repo.get_by_id(order_id)
+                if order is None:
+                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found.")
+                return self._format_merchant_order_response(order)
+            else:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Selected rider is not assigned to this restaurant.")
 
         now = datetime.now(UTC)
         order.rider_user_id = rider_user_id

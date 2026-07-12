@@ -198,6 +198,32 @@ class RiderDispatchService:
             pass
         return self._build_offer_response(offer)
 
+    async def dispatch_manual_offer(self, *, order: Order, restaurant: Restaurant, rider_user_id: int) -> RiderDispatchOfferResponse:
+        offer = OrderDispatchOffer(
+            order_id=order.id,
+            restaurant_id=restaurant.id,
+            rider_user_id=rider_user_id,
+            tier="manual",
+            status="pending",
+            round_number=order.rider_assignment_round + 1,
+            rank_index=0,
+            expires_at=datetime.now(UTC) + timedelta(seconds=self._timeout_for_tier(restaurant, "open")),
+        )
+        self.session.add(offer)
+        order.rider_assignment_state = "offered_manual"
+        order.rider_assignment_tier = "manual"
+        order.rider_assignment_round += 1
+        order.rider_offer_expires_at = offer.expires_at
+        await self.session.commit()
+        await self.session.refresh(offer)
+        await self._notify_rider_offer(order, offer)
+        try:
+            from app.tasks.rider_dispatch import expire_dispatch_offer
+
+            expire_dispatch_offer.apply_async(args=[offer.id], countdown=self._timeout_for_tier(restaurant, "open"))
+        except Exception:
+            pass
+        return self._build_offer_response(offer)
     async def accept_offer(self, *, user: User, offer_id: int) -> RiderDispatchOfferResponse:
         offer = await self.session.get(OrderDispatchOffer, offer_id)
         if offer is None:
