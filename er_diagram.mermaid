@@ -1,0 +1,629 @@
+erDiagram
+    restaurant_tables {
+        INTEGER id PK
+        INTEGER restaurant_id FK
+        VARCHAR code 
+        VARCHAR label 
+        VARCHAR zone 
+        INTEGER min_guest_count 
+        INTEGER max_guest_count 
+        VARCHAR status 
+        INTEGER sort_order 
+        DATETIME created_at 
+        DATETIME updated_at 
+    }
+    restaurants ||--o{ restaurant_tables : "restaurant_id"
+    table_reservations {
+        INTEGER id PK
+        INTEGER customer_id FK
+        INTEGER restaurant_id FK
+        INTEGER table_id FK
+        VARCHAR reservation_code 
+        VARCHAR status 
+        DATE reservation_date 
+        VARCHAR reservation_time 
+        INTEGER guest_count 
+        VARCHAR contact_name 
+        VARCHAR contact_phone 
+        VARCHAR contact_email 
+        VARCHAR occasion 
+        VARCHAR special_request 
+        VARCHAR source 
+        VARCHAR cancellation_reason 
+        DATETIME created_at 
+        DATETIME updated_at 
+    }
+    users ||--o{ table_reservations : "customer_id"
+    restaurants ||--o{ table_reservations : "restaurant_id"
+    restaurant_tables ||--o{ table_reservations : "table_id"
+    reservation_status_events {
+        INTEGER id PK
+        INTEGER reservation_id FK
+        VARCHAR status 
+        VARCHAR note 
+        DATETIME created_at 
+        DATETIME updated_at 
+    }
+    table_reservations ||--o{ reservation_status_events : "reservation_id"
+    restaurants {
+        INTEGER id PK
+        VARCHAR name 
+        VARCHAR slug 
+        VARCHAR integration_mode 
+        VARCHAR status 
+        VARCHAR cover_image_url 
+        VARCHAR logo_url 
+        VARCHAR short_description 
+        VARCHAR primary_cuisine_label 
+        VARCHAR city 
+        VARCHAR area 
+        FLOAT latitude 
+        FLOAT longitude 
+        FLOAT rating_average 
+        INTEGER review_count 
+        BOOLEAN supports_delivery 
+        BOOLEAN has_free_delivery 
+        BOOLEAN supports_pickup 
+        BOOLEAN supports_table_booking 
+        VARCHAR offer_text 
+        VARCHAR contact_phone 
+        VARCHAR contact_email 
+        VARCHAR opening_time 
+        VARCHAR closing_time 
+        VARCHAR about_text 
+        VARCHAR facilities_text 
+        INTEGER delivery_eta_min_minutes 
+        INTEGER delivery_eta_max_minutes 
+        INTEGER sort_rank 
+        BOOLEAN is_featured 
+        DATETIME created_at 
+        DATETIME updated_at 
+    }
+    restaurant_branches {
+        INTEGER id PK
+        INTEGER restaurant_id FK
+        VARCHAR name 
+        VARCHAR city 
+        VARCHAR phone 
+        VARCHAR status 
+        DATETIME created_at 
+        DATETIME updated_at 
+    }
+    restaurants ||--o{ restaurant_branches : "restaurant_id"
+    restaurant_user_assignments {
+        INTEGER id PK
+        INTEGER user_id FK
+        INTEGER restaurant_id FK
+        INTEGER branch_id FK
+        VARCHAR assignment_type 
+        VARCHAR source_system 
+        VARCHAR external_role_snapshot 
+        DATETIME created_at 
+        DATETIME updated_at 
+    }
+    users ||--o{ restaurant_user_assignments : "user_id"
+    restaurants ||--o{ restaurant_user_assignments : "restaurant_id"
+    restaurant_branches ||--o{ restaurant_user_assignments : "branch_id"
+    categories {
+        INTEGER id PK
+        VARCHAR slug 
+        VARCHAR name 
+        VARCHAR icon_url 
+        INTEGER sort_order 
+        BOOLEAN is_featured 
+        BOOLEAN is_active 
+        DATETIME created_at 
+        DATETIME updated_at 
+    }
+    restaurant_categories {
+        INTEGER restaurant_id PK,FK
+        INTEGER category_id PK,FK
+    }
+    restaurants ||--o{ restaurant_categories : "restaurant_id"
+    categories ||--o{ restaurant_categories : "category_id"
+    restaurant_reviews {
+        INTEGER id PK
+        INTEGER restaurant_id FK
+        INTEGER user_id FK
+        INTEGER order_id FK
+        VARCHAR author_name 
+        FLOAT rating 
+        VARCHAR comment 
+        VARCHAR merchant_reply 
+        VARCHAR source 
+        BOOLEAN is_published 
+        DATETIME created_at 
+        DATETIME updated_at 
+    }
+    restaurants ||--o{ restaurant_reviews : "restaurant_id"
+    users ||--o{ restaurant_reviews : "user_id"
+    orders ||--o{ restaurant_reviews : "order_id"
+    restaurant_gallery_images {
+        INTEGER id PK
+        INTEGER restaurant_id FK
+        VARCHAR image_url 
+        VARCHAR caption 
+        INTEGER sort_order 
+        DATETIME created_at 
+        DATETIME updated_at 
+    }
+    restaurants ||--o{ restaurant_gallery_images : "restaurant_id"
+    restaurant_review_images {
+        INTEGER id PK
+        INTEGER review_id FK
+        VARCHAR image_url 
+        INTEGER sort_order 
+        DATETIME created_at 
+        DATETIME updated_at 
+    }
+    restaurant_reviews ||--o{ restaurant_review_images : "review_id"
+    rider_applications {
+        INTEGER id PK
+        INTEGER user_id FK
+        VARCHAR status 
+        VARCHAR full_name 
+        VARCHAR email 
+        VARCHAR phone 
+        VARCHAR city_area 
+        VARCHAR address 
+        VARCHAR vehicle_type 
+        VARCHAR availability 
+        VARCHAR notes 
+        VARCHAR admin_notes 
+        INTEGER reviewed_by_user_id FK
+        DATETIME reviewed_at 
+        DATETIME created_at 
+        DATETIME updated_at 
+    }
+    users ||--o{ rider_applications : "user_id"
+    users ||--o{ rider_applications : "reviewed_by_user_id"
+    carts {
+        INTEGER id PK
+        INTEGER customer_id FK
+        INTEGER restaurant_id FK
+        INTEGER address_id FK
+        VARCHAR status 
+        VARCHAR coupon_code 
+        FLOAT coupon_discount 
+        FLOAT delivery_fee 
+        FLOAT service_fee 
+        FLOAT tax_amount 
+        FLOAT subtotal_amount 
+        FLOAT total_amount 
+        BOOLEAN needs_cutlery 
+        VARCHAR cooking_request 
+        VARCHAR delivery_instruction 
+        DATETIME created_at 
+        DATETIME updated_at 
+    }
+    users ||--o{ carts : "customer_id"
+    restaurants ||--o{ carts : "restaurant_id"
+    customer_addresses ||--o{ carts : "address_id"
+    cart_items {
+        INTEGER id PK
+        INTEGER cart_id FK
+        INTEGER menu_item_id FK
+        INTEGER quantity 
+        DATETIME created_at 
+        DATETIME updated_at 
+    }
+    carts ||--o{ cart_items : "cart_id"
+    menu_items ||--o{ cart_items : "menu_item_id"
+    customer_addresses {
+        INTEGER id PK
+        INTEGER user_id FK
+        VARCHAR label 
+        VARCHAR recipient_name 
+        VARCHAR phone_country_code 
+        VARCHAR phone_number 
+        VARCHAR email 
+        VARCHAR address_line_1 
+        VARCHAR address_line_2 
+        VARCHAR street_number 
+        VARCHAR city 
+        VARCHAR area 
+        VARCHAR state_or_province 
+        FLOAT latitude 
+        FLOAT longitude 
+        VARCHAR delivery_notes 
+        BOOLEAN is_active 
+        DATETIME created_at 
+        DATETIME updated_at 
+    }
+    users ||--o{ customer_addresses : "user_id"
+    external_user_links {
+        INTEGER id PK
+        INTEGER user_id FK
+        VARCHAR system_name 
+        VARCHAR external_user_id 
+        VARCHAR external_role_snapshot 
+        VARCHAR external_restaurant_id 
+        VARCHAR match_source 
+        JSON metadata_json 
+        DATETIME created_at 
+        DATETIME updated_at 
+    }
+    users ||--o{ external_user_links : "user_id"
+    restaurant_pos_links {
+        INTEGER id PK
+        INTEGER restaurant_id FK
+        INTEGER branch_id FK
+        VARCHAR pos_restaurant_id 
+        VARCHAR pos_branch_id 
+        VARCHAR sync_mode 
+        BOOLEAN is_active 
+        DATETIME created_at 
+        DATETIME updated_at 
+    }
+    restaurants ||--o{ restaurant_pos_links : "restaurant_id"
+    restaurant_branches ||--o{ restaurant_pos_links : "branch_id"
+    users {
+        INTEGER id PK
+        VARCHAR email 
+        VARCHAR phone 
+        VARCHAR password_hash 
+        VARCHAR full_name 
+        VARCHAR avatar_url 
+        VARCHAR status 
+        BOOLEAN is_active 
+        BOOLEAN is_verified 
+        DATETIME last_login_at 
+        DATETIME deleted_at 
+        INTEGER total_orders 
+        NUMERIC total_spent 
+        INTEGER loyalty_points 
+        INTEGER loyalty_points_earned 
+        INTEGER loyalty_points_redeemed 
+        FLOAT current_latitude 
+        FLOAT current_longitude 
+        DATETIME current_location_updated_at 
+        INTEGER default_address_id FK
+        INTEGER active_restaurant_id FK
+        INTEGER active_workspace_id FK
+        DATETIME created_at 
+        DATETIME updated_at 
+    }
+    customer_addresses ||--o{ users : "default_address_id"
+    restaurants ||--o{ users : "active_restaurant_id"
+    workspaces ||--o{ users : "active_workspace_id"
+    roles {
+        INTEGER id PK
+        VARCHAR code 
+        VARCHAR name 
+        VARCHAR scope_type 
+        VARCHAR description 
+        BOOLEAN is_system_role 
+        DATETIME created_at 
+        DATETIME updated_at 
+    }
+    permissions {
+        INTEGER id PK
+        VARCHAR key 
+        VARCHAR module 
+        VARCHAR description 
+        DATETIME created_at 
+        DATETIME updated_at 
+    }
+    role_permissions {
+        INTEGER role_id PK,FK
+        INTEGER permission_id PK,FK
+    }
+    roles ||--o{ role_permissions : "role_id"
+    permissions ||--o{ role_permissions : "permission_id"
+    user_roles {
+        INTEGER id PK
+        INTEGER user_id FK
+        INTEGER role_id FK
+        INTEGER restaurant_id FK
+        INTEGER branch_id FK
+        DATETIME created_at 
+        DATETIME updated_at 
+    }
+    users ||--o{ user_roles : "user_id"
+    roles ||--o{ user_roles : "role_id"
+    restaurants ||--o{ user_roles : "restaurant_id"
+    restaurant_branches ||--o{ user_roles : "branch_id"
+    refresh_sessions {
+        INTEGER id PK
+        INTEGER user_id FK
+        VARCHAR token_jti 
+        DATETIME expires_at 
+        DATETIME revoked_at 
+        VARCHAR user_agent 
+        VARCHAR ip_address 
+        BOOLEAN is_current 
+        DATETIME created_at 
+        DATETIME updated_at 
+    }
+    users ||--o{ refresh_sessions : "user_id"
+    password_reset_codes {
+        INTEGER id PK
+        INTEGER user_id FK
+        VARCHAR code 
+        DATETIME expires_at 
+        BOOLEAN used 
+        DATETIME created_at 
+        DATETIME updated_at 
+    }
+    users ||--o{ password_reset_codes : "user_id"
+    auth_rate_limits {
+        INTEGER id PK
+        VARCHAR action 
+        VARCHAR key 
+        INTEGER attempt_count 
+        DATETIME window_started_at 
+        DATETIME last_attempt_at 
+        DATETIME blocked_until 
+    }
+    auth_audit_logs {
+        INTEGER id PK
+        INTEGER user_id FK
+        VARCHAR action 
+        VARCHAR outcome 
+        VARCHAR identifier 
+        VARCHAR ip_address 
+        VARCHAR user_agent 
+        JSON detail_json 
+        DATETIME created_at 
+        DATETIME updated_at 
+    }
+    users ||--o{ auth_audit_logs : "user_id"
+    web_push_subscriptions {
+        INTEGER id PK
+        INTEGER user_id FK
+        VARCHAR endpoint 
+        VARCHAR p256dh 
+        VARCHAR auth 
+        VARCHAR user_agent 
+        BOOLEAN is_active 
+        DATETIME created_at 
+        DATETIME updated_at 
+    }
+    users ||--o{ web_push_subscriptions : "user_id"
+    fcm_device_tokens {
+        INTEGER id PK
+        INTEGER user_id FK
+        VARCHAR token 
+        VARCHAR platform 
+        VARCHAR user_agent 
+        BOOLEAN is_active 
+        DATETIME last_seen_at 
+        DATETIME created_at 
+        DATETIME updated_at 
+    }
+    users ||--o{ fcm_device_tokens : "user_id"
+    user_notifications {
+        INTEGER id PK
+        INTEGER recipient_user_id FK
+        VARCHAR audience 
+        VARCHAR category 
+        VARCHAR event_key 
+        VARCHAR title 
+        VARCHAR body 
+        VARCHAR deep_link 
+        JSON payload_json 
+        INTEGER restaurant_id FK
+        INTEGER order_id 
+        INTEGER message_id 
+        INTEGER actor_user_id FK
+        DATETIME read_at 
+        DATETIME dismissed_at 
+        DATETIME created_at 
+        DATETIME updated_at 
+    }
+    users ||--o{ user_notifications : "recipient_user_id"
+    restaurants ||--o{ user_notifications : "restaurant_id"
+    users ||--o{ user_notifications : "actor_user_id"
+    promo_banners {
+        INTEGER id PK
+        VARCHAR title 
+        VARCHAR subtitle 
+        VARCHAR image_url 
+        VARCHAR image_url_mobile 
+        VARCHAR placement 
+        VARCHAR target_type 
+        INTEGER target_id 
+        VARCHAR target_url 
+        VARCHAR cta_text 
+        INTEGER sort_order 
+        BOOLEAN is_active 
+        DATETIME start_at 
+        DATETIME end_at 
+        DATETIME created_at 
+        DATETIME updated_at 
+    }
+    featured_videos {
+        INTEGER id PK
+        VARCHAR title 
+        VARCHAR subtitle 
+        VARCHAR thumbnail_url 
+        VARCHAR video_url 
+        BOOLEAN is_active 
+        INTEGER sort_order 
+        DATETIME created_at 
+        DATETIME updated_at 
+    }
+    messages {
+        INTEGER id PK
+        INTEGER sender_user_id FK
+        INTEGER restaurant_id FK
+        INTEGER customer_user_id FK
+        TEXT content 
+        BOOLEAN is_from_merchant 
+        DATETIME read_at 
+        DATETIME created_at 
+    }
+    users ||--o{ messages : "sender_user_id"
+    restaurants ||--o{ messages : "restaurant_id"
+    users ||--o{ messages : "customer_user_id"
+    workspaces {
+        INTEGER id PK
+        VARCHAR workspace_type 
+        VARCHAR name 
+        VARCHAR slug 
+        VARCHAR status 
+        BOOLEAN is_personal 
+        INTEGER primary_restaurant_id FK
+        JSON metadata_json 
+        DATETIME created_at 
+        DATETIME updated_at 
+    }
+    restaurants ||--o{ workspaces : "primary_restaurant_id"
+    workspace_memberships {
+        INTEGER id PK
+        INTEGER workspace_id FK
+        INTEGER user_id FK
+        VARCHAR membership_role 
+        VARCHAR status 
+        BOOLEAN is_primary 
+        DATETIME created_at 
+        DATETIME updated_at 
+    }
+    workspaces ||--o{ workspace_memberships : "workspace_id"
+    users ||--o{ workspace_memberships : "user_id"
+    merchant_applications {
+        INTEGER id PK
+        INTEGER user_id FK
+        INTEGER workspace_id FK
+        VARCHAR status 
+        VARCHAR business_name 
+        VARCHAR contact_name 
+        VARCHAR contact_email 
+        VARCHAR contact_phone 
+        VARCHAR notes 
+        VARCHAR admin_notes 
+        DATETIME created_at 
+        DATETIME updated_at 
+    }
+    users ||--o{ merchant_applications : "user_id"
+    workspaces ||--o{ merchant_applications : "workspace_id"
+    merchant_restaurant_requests {
+        INTEGER id PK
+        INTEGER application_id FK
+        VARCHAR request_type 
+        VARCHAR status 
+        INTEGER restaurant_id FK
+        VARCHAR requested_name 
+        VARCHAR requested_slug 
+        VARCHAR city 
+        VARCHAR area 
+        FLOAT latitude 
+        FLOAT longitude 
+        VARCHAR source_system 
+        VARCHAR pos_restaurant_id 
+        VARCHAR notes 
+        JSON metadata_json 
+        DATETIME created_at 
+        DATETIME updated_at 
+    }
+    merchant_applications ||--o{ merchant_restaurant_requests : "application_id"
+    restaurants ||--o{ merchant_restaurant_requests : "restaurant_id"
+    menu_items {
+        INTEGER id PK
+        INTEGER restaurant_id FK
+        INTEGER category_id FK
+        VARCHAR slug 
+        VARCHAR name 
+        VARCHAR description 
+        VARCHAR image_url 
+        FLOAT price 
+        VARCHAR currency_code 
+        BOOLEAN is_available 
+        VARCHAR food_type 
+        BOOLEAN is_spicy 
+        BOOLEAN is_featured 
+        BOOLEAN is_popular 
+        INTEGER popularity_score 
+        FLOAT rating_average 
+        INTEGER rating_count 
+        INTEGER favorite_count 
+        DATETIME created_at 
+        DATETIME updated_at 
+    }
+    restaurants ||--o{ menu_items : "restaurant_id"
+    categories ||--o{ menu_items : "category_id"
+    menu_modifier_groups {
+        INTEGER id PK
+        INTEGER menu_item_id FK
+        VARCHAR name 
+        BOOLEAN is_required 
+        INTEGER min_selections 
+        INTEGER max_selections 
+    }
+    menu_items ||--o{ menu_modifier_groups : "menu_item_id"
+    menu_modifier_items {
+        INTEGER id PK
+        INTEGER group_id FK
+        VARCHAR name 
+        FLOAT price_adjustment 
+        BOOLEAN is_available 
+    }
+    menu_modifier_groups ||--o{ menu_modifier_items : "group_id"
+    user_favorite_restaurants {
+        INTEGER id PK
+        INTEGER user_id FK
+        INTEGER restaurant_id FK
+        DATETIME created_at 
+        DATETIME updated_at 
+    }
+    users ||--o{ user_favorite_restaurants : "user_id"
+    restaurants ||--o{ user_favorite_restaurants : "restaurant_id"
+    user_favorite_menu_items {
+        INTEGER id PK
+        INTEGER user_id FK
+        INTEGER menu_item_id FK
+        DATETIME created_at 
+        DATETIME updated_at 
+    }
+    users ||--o{ user_favorite_menu_items : "user_id"
+    menu_items ||--o{ user_favorite_menu_items : "menu_item_id"
+    orders {
+        INTEGER id PK
+        INTEGER customer_id FK
+        INTEGER restaurant_id FK
+        INTEGER address_id FK
+        INTEGER rider_user_id FK
+        VARCHAR order_number 
+        VARCHAR status 
+        FLOAT total_price 
+        VARCHAR payment_method 
+        VARCHAR delivery_address_text 
+        VARCHAR delivery_recipient_name 
+        VARCHAR delivery_phone_number 
+        FLOAT delivery_latitude 
+        FLOAT delivery_longitude 
+        VARCHAR coupon_code 
+        FLOAT coupon_discount 
+        FLOAT delivery_fee 
+        FLOAT service_fee 
+        FLOAT tax_amount 
+        FLOAT subtotal_amount 
+        BOOLEAN needs_cutlery 
+        VARCHAR cooking_request 
+        VARCHAR delivery_instruction 
+        VARCHAR estimated_delivery_window 
+        DATETIME confirmed_at 
+        DATETIME preparing_at 
+        DATETIME rider_assigned_at 
+        DATETIME picked_up_at 
+        DATETIME delivered_at 
+        DATETIME cancelled_at 
+        DATETIME created_at 
+        DATETIME updated_at 
+    }
+    users ||--o{ orders : "customer_id"
+    restaurants ||--o{ orders : "restaurant_id"
+    customer_addresses ||--o{ orders : "address_id"
+    users ||--o{ orders : "rider_user_id"
+    order_items {
+        INTEGER id PK
+        INTEGER order_id FK
+        INTEGER menu_item_id FK
+        VARCHAR name 
+        FLOAT price 
+        INTEGER quantity 
+        DATETIME created_at 
+        DATETIME updated_at 
+    }
+    orders ||--o{ order_items : "order_id"
+    menu_items ||--o{ order_items : "menu_item_id"

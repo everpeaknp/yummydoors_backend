@@ -26,6 +26,7 @@ from app.modules.orders.schemas import (
     RiderSummaryResponse,
     UserSnapshot,
 )
+from app.modules.rider_dispatch.service import RiderDispatchService
 
 
 class OrderService:
@@ -139,6 +140,8 @@ class OrderService:
             full_name=user.full_name,
             phone=user.phone,
             avatar_url=user.avatar_url,
+            current_latitude=user.current_latitude,
+            current_longitude=user.current_longitude,
         )
 
     def _format_order_response(self, order: Order) -> OrderResponse:
@@ -203,6 +206,9 @@ class OrderService:
             pickedUpAt=order.picked_up_at,
             deliveredAt=order.delivered_at,
             cancelledAt=order.cancelled_at,
+            riderAssignmentState=order.rider_assignment_state,
+            riderAssignmentTier=order.rider_assignment_tier,
+            riderOfferExpiresAt=order.rider_offer_expires_at,
             pricing=OrderPricingBreakdown(
                 items_total=items_total,
                 coupon_discount=order.coupon_discount,
@@ -261,6 +267,9 @@ class OrderService:
             pickedUpAt=order.picked_up_at,
             deliveredAt=order.delivered_at,
             cancelledAt=order.cancelled_at,
+            riderAssignmentState=order.rider_assignment_state,
+            riderAssignmentTier=order.rider_assignment_tier,
+            riderOfferExpiresAt=order.rider_offer_expires_at,
         )
 
     async def _get_checkout_cart(self, customer_id: int, cart_id: int) -> Cart | None:
@@ -476,38 +485,27 @@ class OrderService:
         restaurant_id = await self._get_active_merchant_restaurant_id(merchant_user_id)
         if restaurant_id is None:
             return []
-
-        stmt = (
-            select(User)
-            .options(
-                selectinload(User.roles).selectinload(UserRole.role),
-                selectinload(User.restaurant_assignments),
-            )
-            .where(User.is_active.is_(True))
+        dispatch_service = RiderDispatchService(self.session)
+        candidates = await dispatch_service.list_candidates(
+            merchant_user_id=merchant_user_id,
+            restaurant_id=restaurant_id,
         )
-        result = await self.session.execute(stmt)
-        users = result.scalars().unique().all()
-
-        riders: list[RiderSummaryResponse] = []
-        for user in users:
-            if not self._user_has_rider_access(user, restaurant_id):
-                continue
-            riders.append(
-                RiderSummaryResponse(
-                    id=user.id,
-                    full_name=user.full_name,
-                    phone=user.phone,
-                    avatar_url=user.avatar_url,
-                    restaurant_ids=sorted(
-                        {
-                            assignment.restaurant_id
-                            for assignment in user.restaurant_assignments
-                            if assignment.restaurant_id is not None
-                        }
-                    ),
-                )
+        return [
+            RiderSummaryResponse(
+                id=item.id,
+                full_name=item.full_name,
+                phone=item.phone,
+                avatar_url=item.avatar_url,
+                assignment_type=item.assignment_type,
+                rider_work_mode=item.rider_work_mode,
+                busy=item.busy,
+                distance_km=item.distance_km,
+                current_latitude=item.current_latitude,
+                current_longitude=item.current_longitude,
+                restaurant_ids=[],
             )
-        return riders
+            for item in candidates
+        ]
 
     async def update_merchant_order_status(self, merchant_user_id: int, order_id: int, new_status: OrderStatus) -> MerchantOrderResponse:
         restaurant_id = await self._get_active_merchant_restaurant_id(merchant_user_id)
@@ -528,10 +526,14 @@ class OrderService:
         
         if new_status == OrderStatus.preparing:
             order.preparing_at = now
+            dispatch_service = RiderDispatchService(self.session)
+            await dispatch_service.dispatch_next_offer(order_id=order.id)
         elif new_status == OrderStatus.delivered:
             order.delivered_at = now
+            order.rider_offer_expires_at = None
         elif new_status == OrderStatus.cancelled:
             order.cancelled_at = now
+            order.rider_offer_expires_at = None
 
         if new_status == OrderStatus.delivered and previous_status != OrderStatus.delivered:
             try:
@@ -695,7 +697,7 @@ class OrderService:
         assignment_restaurant_ids = {
             assignment.restaurant_id
             for assignment in user.restaurant_assignments
-            if assignment.restaurant_id is not None and assignment.assignment_type == "rider"
+            if assignment.restaurant_id is not None and assignment.assignment_type.startswith("rider")
         }
         active_restaurant_id = user.active_restaurant_id
         all_restaurant_ids = scoped_restaurant_ids | assignment_restaurant_ids

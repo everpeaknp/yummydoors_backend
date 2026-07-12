@@ -8,7 +8,7 @@ celery_app = Celery(
     "yummydoors",
     broker=settings.redis_url,
     backend=settings.redis_url,
-    include=["app.tasks.notifications"],
+    include=["app.tasks.notifications", "app.tasks.rider_dispatch"],
 )
 
 celery_app.conf.update(

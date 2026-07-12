@@ -22,6 +22,7 @@ from app.modules.messages.api import router as messages_router
 from app.modules.reviews.api import router as reviews_router
 from app.modules.media.api import router as media_router
 from app.modules.notifications.api import router as notifications_router
+from app.modules.rider_dispatch.api import router as rider_dispatch_router
 from app.modules.rider_applications.api import router as rider_applications_router
 from app.modules.realtime.bus import realtime_bus
 
@@ -86,6 +87,10 @@ OPENAPI_TAGS = [
         "name": "Rider Applications",
         "description": "Customer rider application intake and admin approval endpoints.",
     },
+    {
+        "name": "Rider Dispatch",
+        "description": "Merchant rider invitation, ranked offer dispatch, rider acceptance, and dispatch timeouts.",
+    },
 ]
 
 
@@ -142,6 +147,7 @@ app.include_router(messages_router, prefix=settings.api_v1_prefix)
 app.include_router(reviews_router, prefix=settings.api_v1_prefix)
 app.include_router(media_router, prefix=settings.api_v1_prefix)
 app.include_router(notifications_router, prefix=settings.api_v1_prefix)
+app.include_router(rider_dispatch_router, prefix=settings.api_v1_prefix)
 app.include_router(rider_applications_router, prefix=settings.api_v1_prefix)
 
 

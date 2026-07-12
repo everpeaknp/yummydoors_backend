@@ -45,6 +45,8 @@ class UserSnapshot(BaseModel):
     full_name: str
     phone: str | None = None
     avatar_url: str | None = None
+    current_latitude: float | None = None
+    current_longitude: float | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -75,6 +77,9 @@ class OrderResponse(BaseModel):
     pickedUpAt: datetime | None = None
     deliveredAt: datetime | None = None
     cancelledAt: datetime | None = None
+    riderAssignmentState: str = "unassigned"
+    riderAssignmentTier: str | None = None
+    riderOfferExpiresAt: datetime | None = None
     pricing: OrderPricingBreakdown = Field(default_factory=OrderPricingBreakdown)
     timeline: list[OrderTimelineEvent] = Field(default_factory=list)
 
@@ -104,6 +109,9 @@ class MerchantOrderResponse(BaseModel):
     pickedUpAt: datetime | None = None
     deliveredAt: datetime | None = None
     cancelledAt: datetime | None = None
+    riderAssignmentState: str = "unassigned"
+    riderAssignmentTier: str | None = None
+    riderOfferExpiresAt: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -117,6 +125,12 @@ class RiderSummaryResponse(BaseModel):
     full_name: str
     phone: str | None = None
     avatar_url: str | None = None
+    assignment_type: str = "open"
+    rider_work_mode: str = "freelance"
+    busy: bool = False
+    distance_km: float | None = None
+    current_latitude: float | None = None
+    current_longitude: float | None = None
     restaurant_ids: list[int] = Field(default_factory=list)
 
     model_config = ConfigDict(from_attributes=True)

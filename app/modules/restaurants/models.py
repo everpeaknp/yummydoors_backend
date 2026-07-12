@@ -45,6 +45,10 @@ class Restaurant(Base, TimestampMixin):
     facilities_text: Mapped[str | None] = mapped_column(String(4000), nullable=True)
     delivery_eta_min_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     delivery_eta_max_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rider_dispatch_policy: Mapped[str] = mapped_column(String(32), default="ranked", nullable=False)
+    rider_private_offer_timeout_seconds: Mapped[int] = mapped_column(Integer, default=60, nullable=False)
+    rider_preferred_offer_timeout_seconds: Mapped[int] = mapped_column(Integer, default=180, nullable=False)
+    rider_open_offer_timeout_seconds: Mapped[int] = mapped_column(Integer, default=300, nullable=False)
     sort_rank: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     is_featured: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 

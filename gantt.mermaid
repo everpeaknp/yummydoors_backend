@@ -1,0 +1,29 @@
+gantt
+    title YummyDoors Development Timeline (June 7 - July 12)
+    dateFormat  YYYY-MM-DD
+    axisFormat  %b %d
+    
+    section 1. Planning
+    Requirements & Analysis     :done, p1, 2026-06-07, 3d
+    Architecture & System Design:done, p2, after p1, 2d
+    
+    section 2. Frontend
+    Mobile App (Flutter) UI     :done, f1, 2026-06-12, 10d
+    Web Dashboards (Next.js)    :done, f2, 2026-06-12, 10d
+    UI Polish & Refinement      :done, f3, after f1, 2d
+    
+    section 3. Backend
+    Database Design & Models    :done, b1, 2026-06-19, 3d
+    Core API Routes (FastAPI)   :done, b2, after b1, 6d
+    Background Jobs (Celery)    :done, b3, after b2, 2d
+    
+    section 4. Integration
+    Frontend-to-Backend APIs    :active, i1, 2026-06-30, 4d
+    Real-time WebSockets        :active, i2, after i1, 2d
+    Payment Gateway Setup       :i3, after i2, 1d
+    
+    section 5. QA & Launch
+    Unit & Integration Tests    :t1, 2026-07-07, 2d
+    User Acceptance Testing     :t2, after t1, 2d
+    Server Deploy & CI/CD       :d1, 2026-07-11, 1d
+    Project Documentation       :d2, 2026-07-11, 2d
