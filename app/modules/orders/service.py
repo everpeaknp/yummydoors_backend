@@ -221,7 +221,11 @@ class OrderService:
             timeline=self._build_timeline(order),
         )
 
-    def _format_merchant_order_response(self, order: Order) -> MerchantOrderResponse:
+    def _format_merchant_order_response(
+        self,
+        order: Order,
+        rider_offer=None,
+    ) -> MerchantOrderResponse:
         items = [
             OrderItemResponse(name=item.name, price=item.price, quantity=item.quantity)
             for item in order.items
@@ -270,6 +274,8 @@ class OrderService:
             riderAssignmentState=order.rider_assignment_state,
             riderAssignmentTier=order.rider_assignment_tier,
             riderOfferExpiresAt=order.rider_offer_expires_at,
+            riderOfferId=rider_offer.id if rider_offer else None,
+            riderOfferTier=rider_offer.tier if rider_offer else None,
         )
 
     async def _get_checkout_cart(self, customer_id: int, cart_id: int) -> Cart | None:
@@ -479,7 +485,18 @@ class OrderService:
 
     async def get_rider_orders(self, rider_user_id: int) -> list[MerchantOrderResponse]:
         orders = await self.repo.get_orders_by_rider(rider_user_id)
-        return [self._format_merchant_order_response(order) for order in orders]
+        dispatch_service = RiderDispatchService(self.session)
+        offers = await dispatch_service.list_pending_offers_for_rider(
+            rider_user_id=rider_user_id,
+        )
+        offers_by_order = {offer.order_id: offer for offer in offers}
+        return [
+            self._format_merchant_order_response(
+                order,
+                rider_offer=offers_by_order.get(order.id),
+            )
+            for order in orders
+        ]
 
     async def list_restaurant_riders(self, merchant_user_id: int) -> list[RiderSummaryResponse]:
         restaurant_id = await self._get_active_merchant_restaurant_id(merchant_user_id)
@@ -498,6 +515,7 @@ class OrderService:
                 avatar_url=item.avatar_url,
                 assignment_type=item.assignment_type,
                 rider_work_mode=item.rider_work_mode,
+                is_accepting_offers=item.is_accepting_offers,
                 busy=item.busy,
                 distance_km=item.distance_km,
                 current_latitude=item.current_latitude,
@@ -574,30 +592,28 @@ class OrderService:
         if rider is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rider not found.")
         
-        if not self._user_has_rider_access(rider, restaurant_id):
-            if rider.rider_work_mode == "freelance":
-                dispatch_service = RiderDispatchService(self.session)
-                await dispatch_service.dispatch_manual_offer(order=order, restaurant=order.restaurant, rider_user_id=rider_user_id)
-                order = await self.repo.get_by_id(order_id)
-                if order is None:
-                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found.")
-                return self._format_merchant_order_response(order)
-            else:
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Selected rider is not assigned to this restaurant.")
+        is_private_rider = self._user_has_rider_access(rider, restaurant_id)
+        if not is_private_rider and rider.rider_work_mode != "freelance":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Selected rider is not assigned to this restaurant.",
+            )
+        if not is_private_rider and not rider.is_accepting_offers:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Selected freelance rider is offline.",
+            )
 
-        now = datetime.now(UTC)
-        order.rider_user_id = rider_user_id
-        order.rider_assigned_at = now
-        if order.status == OrderStatus.placed:
-            order.status = OrderStatus.preparing
-            order.preparing_at = order.preparing_at or now
-
-        await self.session.commit()
-        await self.session.refresh(order)
+        dispatch_service = RiderDispatchService(self.session)
+        offer = await dispatch_service.dispatch_manual_offer(
+            order=order,
+            restaurant=order.restaurant,
+            rider_user_id=rider_user_id,
+        )
         order = await self.repo.get_by_id(order_id)
         if order is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found.")
-        return self._format_merchant_order_response(order)
+        return self._format_merchant_order_response(order, rider_offer=offer)
 
     async def rider_claim_order(self, rider_user_id: int, order_id: int) -> MerchantOrderResponse:
         order = await self.repo.get_by_id(order_id)
@@ -609,8 +625,31 @@ class OrderService:
         rider = await self._load_user_with_roles(rider_user_id)
         if rider is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rider not found.")
-        if not self._user_has_rider_access(rider, order.restaurant_id):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You are not assigned to this restaurant.")
+        dispatch_service = RiderDispatchService(self.session)
+        pending_offer = await dispatch_service.get_pending_offer_for_rider(
+            rider_user_id=rider_user_id,
+            order_id=order_id,
+        )
+        if pending_offer is not None:
+            await dispatch_service.accept_offer(user=rider, offer_id=pending_offer.id)
+            accepted_order = await self.repo.get_by_id(order_id)
+            if accepted_order is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found.")
+            return self._format_merchant_order_response(accepted_order)
+
+        has_restaurant_assignment = self._user_has_rider_access(rider, order.restaurant_id)
+        can_claim_open = (
+            rider.rider_work_mode == "freelance"
+            and rider.is_accepting_offers
+            and order.rider_assignment_state == "open_unfilled"
+            and order.restaurant is not None
+            and order.restaurant.rider_dispatch_policy != "private_only"
+        )
+        if not has_restaurant_assignment and not can_claim_open:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="This order is not available for you to claim.",
+            )
 
         now = datetime.now(UTC)
         order.rider_user_id = rider_user_id
@@ -706,7 +745,8 @@ class OrderService:
         assignment_restaurant_ids = {
             assignment.restaurant_id
             for assignment in user.restaurant_assignments
-            if assignment.restaurant_id is not None and assignment.assignment_type.startswith("rider")
+            if assignment.restaurant_id is not None
+            and assignment.assignment_type in {"rider_private", "private_rider"}
         }
         active_restaurant_id = user.active_restaurant_id
         all_restaurant_ids = scoped_restaurant_ids | assignment_restaurant_ids

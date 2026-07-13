@@ -53,6 +53,7 @@ class User(Base, TimestampMixin):
         DateTime(timezone=True), nullable=True
     )
     rider_work_mode: Mapped[str] = mapped_column(String(32), default="freelance", nullable=False)
+    is_accepting_offers: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     default_address_id: Mapped[int | None] = mapped_column(ForeignKey("customer_addresses.id", ondelete="SET NULL", use_alter=True), nullable=True)
     active_restaurant_id: Mapped[int | None] = mapped_column(
         ForeignKey("restaurants.id", ondelete="SET NULL", use_alter=True),

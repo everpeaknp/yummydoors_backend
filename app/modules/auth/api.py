@@ -12,6 +12,7 @@ from app.modules.auth.schemas import (
     PasswordResetRequest,
     RefreshRequest,
     RegisterRequest,
+    RiderAvailabilityUpdateRequest,
     RiderLocationUpdateRequest,
     RiderWorkModeUpdateRequest,
     UserSummary,
@@ -142,3 +143,14 @@ async def update_rider_work_mode(
 ):
     data = await service.update_rider_work_mode(user, payload, request)
     return ApiResponse(message="Rider work mode updated successfully.", data=data)
+
+
+@router.patch("/me/rider-availability", response_model=ApiResponse[UserSummary])
+async def update_rider_availability(
+    payload: RiderAvailabilityUpdateRequest,
+    request: Request,
+    user=Depends(get_current_user),
+    service: AuthService = Depends(get_auth_service),
+):
+    data = await service.update_rider_availability(user, payload, request)
+    return ApiResponse(message="Rider availability updated successfully.", data=data)

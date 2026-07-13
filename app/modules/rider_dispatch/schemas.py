@@ -12,6 +12,7 @@ class RiderDispatchCandidateResponse(BaseModel):
     avatar_url: str | None = None
     assignment_type: str = "open"
     rider_work_mode: str = "freelance"
+    is_accepting_offers: bool = False
     busy: bool = False
     distance_km: float | None = None
     current_latitude: float | None = None
@@ -55,4 +56,3 @@ class RiderDispatchOfferResponse(BaseModel):
     responded_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
-

@@ -31,6 +31,7 @@ class RiderDispatchService:
         self.session = session
         self.order_repo = OrderRepository(session)
         self.notifications = NotificationService(session)
+        self._busy_rider_ids: set[int] = set()
 
     async def invite_rider(
         self,
@@ -128,6 +129,7 @@ class RiderDispatchService:
     ) -> list[RiderDispatchCandidateResponse]:
         restaurant = await self._require_managed_restaurant(merchant_user_id, restaurant_id)
         order = await self.order_repo.get_by_id(order_id) if order_id is not None else None
+        await self._load_busy_rider_ids()
         result = await self.session.execute(
             select(User)
             .options(
@@ -199,6 +201,13 @@ class RiderDispatchService:
         return self._build_offer_response(offer)
 
     async def dispatch_manual_offer(self, *, order: Order, restaurant: Restaurant, rider_user_id: int) -> RiderDispatchOfferResponse:
+        existing_offer = await self.get_pending_offer_for_rider(
+            rider_user_id=rider_user_id,
+            order_id=order.id,
+        )
+        if existing_offer is not None:
+            return self._build_offer_response(existing_offer)
+
         offer = OrderDispatchOffer(
             order_id=order.id,
             restaurant_id=restaurant.id,
@@ -224,6 +233,48 @@ class RiderDispatchService:
         except Exception:
             pass
         return self._build_offer_response(offer)
+
+    async def list_pending_offers_for_rider(
+        self,
+        *,
+        rider_user_id: int,
+    ) -> list[OrderDispatchOffer]:
+        now = datetime.now(UTC)
+        result = await self.session.execute(
+            select(OrderDispatchOffer)
+            .where(
+                OrderDispatchOffer.rider_user_id == rider_user_id,
+                OrderDispatchOffer.status == "pending",
+                or_(
+                    OrderDispatchOffer.expires_at.is_(None),
+                    OrderDispatchOffer.expires_at > now,
+                ),
+            )
+            .order_by(OrderDispatchOffer.created_at.desc())
+        )
+        return list(result.scalars().all())
+
+    async def get_pending_offer_for_rider(
+        self,
+        *,
+        rider_user_id: int,
+        order_id: int,
+    ) -> OrderDispatchOffer | None:
+        now = datetime.now(UTC)
+        result = await self.session.execute(
+            select(OrderDispatchOffer)
+            .where(
+                OrderDispatchOffer.rider_user_id == rider_user_id,
+                OrderDispatchOffer.order_id == order_id,
+                OrderDispatchOffer.status == "pending",
+                or_(
+                    OrderDispatchOffer.expires_at.is_(None),
+                    OrderDispatchOffer.expires_at > now,
+                ),
+            )
+            .order_by(OrderDispatchOffer.created_at.desc())
+        )
+        return result.scalars().first()
     async def accept_offer(self, *, user: User, offer_id: int) -> RiderDispatchOfferResponse:
         offer = await self.session.get(OrderDispatchOffer, offer_id)
         if offer is None:
@@ -317,6 +368,17 @@ class RiderDispatchService:
         except Exception:
             pass
         try:
+            await self.notifications.send_web_push_to_user(
+                user_id=offer.rider_user_id,
+                payload=payload,
+            )
+            await self.notifications.send_fcm_to_user(
+                user_id=offer.rider_user_id,
+                payload=payload,
+            )
+        except Exception:
+            pass
+        try:
             await realtime_bus.publish(ORDER_RIDER_CHANNEL, payload)
         except Exception:
             pass
@@ -326,6 +388,14 @@ class RiderDispatchService:
         order: Order,
         restaurant: Restaurant,
     ) -> list[RiderDispatchCandidateResponse]:
+        await self._load_busy_rider_ids()
+        prior_result = await self.session.execute(
+            select(OrderDispatchOffer.rider_user_id).where(
+                OrderDispatchOffer.order_id == order.id,
+                OrderDispatchOffer.status.in_({"rejected", "expired"}),
+            )
+        )
+        previously_offered_rider_ids = set(prior_result.scalars().all())
         result = await self.session.execute(
             select(User)
             .options(
@@ -338,6 +408,8 @@ class RiderDispatchService:
         ranked: list[RiderDispatchCandidateResponse] = []
         for user in users:
             if not self._user_is_rider(user):
+                continue
+            if user.id in previously_offered_rider_ids:
                 continue
             if self._is_busy(user):
                 continue
@@ -364,6 +436,8 @@ class RiderDispatchService:
             return None
         if user.rider_work_mode == "assigned" and assignment_type == "open":
             return None
+        if assignment_type == "open" and not user.is_accepting_offers:
+            return None
         distance_km = self._distance_to_restaurant(user, restaurant)
         return RiderDispatchCandidateResponse(
             id=user.id,
@@ -372,6 +446,7 @@ class RiderDispatchService:
             avatar_url=user.avatar_url,
             assignment_type=assignment_type,
             rider_work_mode=user.rider_work_mode,
+            is_accepting_offers=user.is_accepting_offers,
             busy=self._is_busy(user),
             distance_km=distance_km,
             current_latitude=user.current_latitude,
@@ -387,7 +462,7 @@ class RiderDispatchService:
         if assignment_types.intersection({"rider_private", "private_rider"}):
             return "rider_private"
         if assignment_types.intersection({"rider_preferred", "preferred_rider"}):
-            return "rider_preferred"
+            return "open"
         if "rider" in {role.role.code for role in user.roles} and user.rider_work_mode == "freelance":
             return "open"
         if assignment_types.intersection({"rider", "rider_open", "open_rider"}):
@@ -398,8 +473,19 @@ class RiderDispatchService:
         return any(role.role.code == "rider" for role in user.roles)
 
     def _is_busy(self, user: User) -> bool:
-        # Treat any in-flight order as busy for open dispatch.
-        return False
+        return user.id in self._busy_rider_ids
+
+    async def _load_busy_rider_ids(self) -> None:
+        result = await self.session.execute(
+            select(Order.rider_user_id).where(
+                Order.rider_user_id.is_not(None),
+                Order.cancelled_at.is_(None),
+                Order.delivered_at.is_(None),
+            )
+        )
+        self._busy_rider_ids = {
+            rider_id for rider_id in result.scalars().all() if rider_id is not None
+        }
 
     def _distance_to_restaurant(self, user: User, restaurant: Restaurant) -> float | None:
         if None in {user.current_latitude, user.current_longitude, restaurant.latitude, restaurant.longitude}:

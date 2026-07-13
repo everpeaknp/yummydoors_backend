@@ -2,11 +2,12 @@ from datetime import UTC, datetime
 from typing import List, Optional
 import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, exists, or_
 from sqlalchemy.orm import selectinload
 
 from app.modules.orders.models import Order, OrderItem, OrderStatus
 from app.modules.carts.models import Cart, CartStatus
+from app.modules.rider_dispatch.models import OrderDispatchOffer
 
 class OrderRepository:
     def __init__(self, session: AsyncSession):
@@ -118,12 +119,26 @@ class OrderRepository:
         return result.scalars().first()
 
     async def get_orders_by_rider(self, rider_user_id: int) -> List[Order]:
+        now = datetime.now(UTC)
+        has_pending_offer = exists(
+            select(OrderDispatchOffer.id).where(
+                OrderDispatchOffer.order_id == Order.id,
+                OrderDispatchOffer.rider_user_id == rider_user_id,
+                OrderDispatchOffer.status == "pending",
+                or_(
+                    OrderDispatchOffer.expires_at.is_(None),
+                    OrderDispatchOffer.expires_at > now,
+                ),
+            )
+        )
         stmt = select(Order).options(
             selectinload(Order.items),
             selectinload(Order.restaurant),
             selectinload(Order.customer),
             selectinload(Order.address),
             selectinload(Order.rider),
-        ).where(Order.rider_user_id == rider_user_id).order_by(Order.created_at.desc())
+        ).where(
+            or_(Order.rider_user_id == rider_user_id, has_pending_offer)
+        ).order_by(Order.created_at.desc())
         result = await self.session.execute(stmt)
         return list(result.scalars().all())

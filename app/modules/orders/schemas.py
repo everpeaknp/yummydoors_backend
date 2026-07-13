@@ -80,6 +80,8 @@ class OrderResponse(BaseModel):
     riderAssignmentState: str = "unassigned"
     riderAssignmentTier: str | None = None
     riderOfferExpiresAt: datetime | None = None
+    riderOfferId: int | None = None
+    riderOfferTier: str | None = None
     pricing: OrderPricingBreakdown = Field(default_factory=OrderPricingBreakdown)
     timeline: list[OrderTimelineEvent] = Field(default_factory=list)
 
@@ -112,6 +114,8 @@ class MerchantOrderResponse(BaseModel):
     riderAssignmentState: str = "unassigned"
     riderAssignmentTier: str | None = None
     riderOfferExpiresAt: datetime | None = None
+    riderOfferId: int | None = None
+    riderOfferTier: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -127,6 +131,7 @@ class RiderSummaryResponse(BaseModel):
     avatar_url: str | None = None
     assignment_type: str = "open"
     rider_work_mode: str = "freelance"
+    is_accepting_offers: bool = False
     busy: bool = False
     distance_km: float | None = None
     current_latitude: float | None = None

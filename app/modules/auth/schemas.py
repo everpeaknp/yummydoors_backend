@@ -62,6 +62,10 @@ class RiderWorkModeUpdateRequest(BaseModel):
     rider_work_mode: str = Field(pattern="^(freelance|assigned)$")
 
 
+class RiderAvailabilityUpdateRequest(BaseModel):
+    is_accepting_offers: bool
+
+
 class GoogleLoginRequest(BaseModel):
     credential: str = Field(min_length=20)
 
@@ -105,6 +109,7 @@ class UserSummary(BaseModel):
     current_longitude: float | None = None
     current_location_updated_at: datetime | None = None
     rider_work_mode: str = "freelance"
+    is_accepting_offers: bool = False
     status: str
     is_verified: bool
     roles: list[RoleSummary]

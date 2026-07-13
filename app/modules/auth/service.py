@@ -24,6 +24,7 @@ from app.modules.auth.schemas import (
     PasswordResetRequest,
     RoleSummary,
     RiderLocationUpdateRequest,
+    RiderAvailabilityUpdateRequest,
     RiderWorkModeUpdateRequest,
     UserSummary,
 )
@@ -502,6 +503,20 @@ class AuthService:
         await self.repo.commit()
         return await self._build_user_summary(user)
 
+    async def update_rider_availability(
+        self,
+        user: User,
+        payload: RiderAvailabilityUpdateRequest,
+        request: Request | None = None,
+    ) -> UserSummary:
+        role_codes = {item.role.code for item in user.roles}
+        if "rider" not in role_codes:
+            raise HTTPException(status_code=403, detail="Rider access is required.")
+
+        user.is_accepting_offers = payload.is_accepting_offers
+        await self.repo.commit()
+        return await self._build_user_summary(user)
+
     async def get_current_user(self, user_id: int) -> User:
         user = await self.repo.get_user_by_id(user_id)
         if user is None:
@@ -599,6 +614,7 @@ class AuthService:
             current_longitude=user.current_longitude,
             current_location_updated_at=user.current_location_updated_at,
             rider_work_mode=user.rider_work_mode,
+            is_accepting_offers=user.is_accepting_offers,
             status=user.status,
             is_verified=user.is_verified,
             roles=roles,
