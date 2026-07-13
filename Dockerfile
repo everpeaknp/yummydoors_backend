@@ -17,7 +17,8 @@ COPY migrations ./migrations
 COPY alembic.ini ./
 COPY scripts ./scripts
 
-RUN pip install --upgrade pip && pip install .
+RUN pip install --retries 5 --timeout 120 --upgrade pip \
+    && pip install --retries 5 --timeout 120 .
 RUN chmod +x /app/scripts/entrypoint.sh
 
 RUN adduser --disabled-password --gecos "" appuser && chown -R appuser:appuser /app
