@@ -97,6 +97,7 @@ class MerchantOrderResponse(BaseModel):
     restaurantSlug: str | None = None
     restaurantLatitude: float | None = None
     restaurantLongitude: float | None = None
+    riderDispatchPolicy: str = "ranked"
     customerName: str
     date: str
     status: OrderStatus

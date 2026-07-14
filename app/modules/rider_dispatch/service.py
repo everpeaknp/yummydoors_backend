@@ -41,13 +41,25 @@ class RiderDispatchService:
         payload: RiderInvitationCreateRequest,
     ) -> RiderInvitationResponse:
         restaurant = await self._require_managed_restaurant(merchant_user_id, restaurant_id)
-        invited_user = await self._get_user_by_email(payload.invited_email.strip().lower())
+        invited_email = payload.invited_email.strip().lower()
+        invited_user = await self._get_user_by_email(invited_email)
+        if invited_user is not None and invited_user.id == merchant_user_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You cannot invite your own account as a rider.")
+        duplicate = await self.session.execute(
+            select(RestaurantRiderInvitation.id).where(
+                RestaurantRiderInvitation.restaurant_id == restaurant_id,
+                RestaurantRiderInvitation.invited_email == invited_email,
+                RestaurantRiderInvitation.status.in_({"pending", "sent", "accepted"}),
+            ).limit(1)
+        )
+        if duplicate.scalar_one_or_none() is not None:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This rider already belongs to the restaurant team or has a pending invitation.")
 
         invitation = RestaurantRiderInvitation(
             restaurant_id=restaurant.id,
             inviter_user_id=merchant_user_id,
             invited_user_id=invited_user.id if invited_user else None,
-            invited_email=payload.invited_email.strip().lower(),
+            invited_email=invited_email,
             invitation_type=payload.invitation_type,
             status="pending",
             notes=payload.notes.strip() if payload.notes else None,
@@ -224,32 +236,49 @@ class RiderDispatchService:
             await self.session.commit()
             return None
 
-        chosen = candidates[0]
-        offer = OrderDispatchOffer(
-            order_id=order.id,
-            restaurant_id=restaurant.id,
-            rider_user_id=chosen.id,
-            tier=chosen.assignment_type,
-            status="pending",
-            round_number=order.rider_assignment_round + 1,
-            rank_index=0,
-            expires_at=datetime.now(UTC) + timedelta(seconds=self._timeout_for_tier(restaurant, chosen.assignment_type)),
+        pending_result = await self.session.execute(
+            select(OrderDispatchOffer).where(
+                OrderDispatchOffer.order_id == order.id,
+                OrderDispatchOffer.status == "pending",
+            )
         )
-        self.session.add(offer)
-        order.rider_assignment_state = f"offered_{chosen.assignment_type}"
-        order.rider_assignment_tier = chosen.assignment_type
-        order.rider_assignment_round += 1
-        order.rider_offer_expires_at = offer.expires_at
-        await self.session.commit()
-        await self.session.refresh(offer)
-        await self._notify_rider_offer(order, offer)
-        try:
-            from app.tasks.rider_dispatch import expire_dispatch_offer
+        pending_offers = list(pending_result.scalars().all())
+        if pending_offers:
+            return self._build_offer_response(pending_offers[0])
 
-            expire_dispatch_offer.apply_async(args=[offer.id], countdown=self._timeout_for_tier(restaurant, chosen.assignment_type))
-        except Exception:
-            pass
-        return self._build_offer_response(offer)
+        is_private_only = restaurant.rider_dispatch_policy == "private_only"
+        selected_candidates = candidates if is_private_only else candidates[:1]
+        round_number = order.rider_assignment_round + 1
+        now = datetime.now(UTC)
+        created_offers: list[OrderDispatchOffer] = []
+        for rank_index, candidate in enumerate(selected_candidates):
+            offer = OrderDispatchOffer(
+                order_id=order.id,
+                restaurant_id=restaurant.id,
+                rider_user_id=candidate.id,
+                tier=candidate.assignment_type,
+                status="pending",
+                round_number=round_number,
+                rank_index=rank_index,
+                expires_at=now + timedelta(seconds=self._timeout_for_tier(restaurant, candidate.assignment_type)),
+            )
+            self.session.add(offer)
+            created_offers.append(offer)
+        order.rider_assignment_state = "offered_rider_private" if is_private_only else f"offered_{selected_candidates[0].assignment_type}"
+        order.rider_assignment_tier = "rider_private" if is_private_only else selected_candidates[0].assignment_type
+        order.rider_assignment_round += 1
+        order.rider_offer_expires_at = max(offer.expires_at for offer in created_offers)
+        await self.session.commit()
+        for offer in created_offers:
+            await self.session.refresh(offer)
+            await self._notify_rider_offer(order, offer)
+            try:
+                from app.tasks.rider_dispatch import expire_dispatch_offer
+
+                expire_dispatch_offer.apply_async(args=[offer.id], countdown=self._timeout_for_tier(restaurant, offer.tier))
+            except Exception:
+                pass
+        return self._build_offer_response(created_offers[0])
 
     async def dispatch_manual_offer(self, *, order: Order, restaurant: Restaurant, rider_user_id: int) -> RiderDispatchOfferResponse:
         existing_offer = await self.get_pending_offer_for_rider(
@@ -342,6 +371,8 @@ class RiderDispatchService:
         order = await self.order_repo.get_by_id(offer.order_id)
         if order is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found.")
+        if order.rider_user_id is not None:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This order has already been assigned to another rider.")
         order.rider_user_id = user.id
         order.rider_assigned_at = order.rider_assigned_at or datetime.now(UTC)
         if order.status == OrderStatus.placed:
@@ -352,6 +383,15 @@ class RiderDispatchService:
         order.rider_offer_expires_at = None
         offer.status = "accepted"
         offer.responded_at = datetime.now(UTC)
+        await self.session.execute(
+            update(OrderDispatchOffer)
+            .where(
+                OrderDispatchOffer.order_id == order.id,
+                OrderDispatchOffer.id != offer.id,
+                OrderDispatchOffer.status == "pending",
+            )
+            .values(status="expired", responded_at=datetime.now(UTC))
+        )
         await self.session.commit()
         await self.session.refresh(offer)
         return self._build_offer_response(offer)

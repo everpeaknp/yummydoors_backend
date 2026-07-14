@@ -257,6 +257,7 @@ class OrderService:
             restaurantSlug=order.restaurant.slug if order.restaurant else None,
             restaurantLatitude=order.restaurant.latitude if order.restaurant else None,
             restaurantLongitude=order.restaurant.longitude if order.restaurant else None,
+            riderDispatchPolicy=order.restaurant.rider_dispatch_policy if order.restaurant else "ranked",
             customerName=order.customer.full_name if order.customer else "Unknown",
             date=order.created_at.strftime("%d/%m/%Y"),
             status=order.status,
@@ -587,6 +588,8 @@ class OrderService:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cancelled orders cannot be assigned.")
         if order.status == OrderStatus.delivered:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Delivered orders cannot be assigned.")
+        if order.restaurant and order.restaurant.rider_dispatch_policy == "private_only":
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Private rider dispatch is enabled. The order is sent to the private rider team automatically.")
 
         rider = await self._load_user_with_roles(rider_user_id)
         if rider is None:

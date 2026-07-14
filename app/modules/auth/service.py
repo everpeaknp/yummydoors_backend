@@ -5,6 +5,7 @@ from secrets import randbelow
 
 from fastapi import HTTPException, Request, status
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import select
 
 from app.core.config import settings
 from app.core.security import create_access_token, create_refresh_token, decode_token
@@ -32,6 +33,8 @@ from app.modules.integrations.pos.lookup import lookup_pos_link_status
 from app.modules.integrations.pos.models import ExternalUserLink
 from app.modules.workspaces.schemas import WorkspaceSummary
 from app.modules.workspaces.service import WorkspaceService
+from app.modules.orders.models import Order
+from app.modules.realtime.bus import ORDER_CUSTOMER_CHANNEL, ORDER_MERCHANT_CHANNEL, realtime_bus
 from app.tasks.notifications import send_password_reset_email_task
 from app.services.avatar_urls import normalize_avatar_url
 from app.utils.security import get_password_hash, verify_password
@@ -487,6 +490,29 @@ class AuthService:
         user.current_longitude = payload.longitude
         user.current_location_updated_at = datetime.now(UTC)
         await self.repo.commit()
+        active_orders = await self.repo.db.execute(
+            select(Order).where(
+                Order.rider_user_id == user.id,
+                Order.status.not_in({"delivered", "cancelled"}),
+            )
+        )
+        for order in active_orders.scalars().all():
+            event = {
+                "event": "rider_location_update",
+                "order_id": order.id,
+                "rider_user_id": user.id,
+                "latitude": payload.latitude,
+                "longitude": payload.longitude,
+                "updated_at": user.current_location_updated_at.isoformat(),
+                "restaurant_id": order.restaurant_id,
+                "customer_id": order.customer_id,
+            }
+            try:
+                await realtime_bus.publish(ORDER_CUSTOMER_CHANNEL, event)
+                await realtime_bus.publish(ORDER_MERCHANT_CHANNEL, event)
+            except Exception:
+                # GPS persistence must not fail because realtime delivery is unavailable.
+                pass
         return await self._build_user_summary(user)
 
     async def update_rider_work_mode(
