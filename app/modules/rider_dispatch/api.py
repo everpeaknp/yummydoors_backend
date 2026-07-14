@@ -57,6 +57,16 @@ async def invite_rider(
     return ApiResponse(message="Rider invitation created successfully.", data=data)
 
 
+@router.get("/invitations/me", response_model=ApiResponse[list[RiderInvitationResponse]])
+async def list_my_invitations(
+    current_user: User = Depends(require_role(["rider"])),
+    db: AsyncSession = Depends(get_db),
+):
+    service = RiderDispatchService(db)
+    data = await service.list_invitations_for_rider(user=current_user)
+    return ApiResponse(message="Rider invitations fetched successfully.", data=data)
+
+
 @router.post("/invitations/{invitation_id}/accept", response_model=ApiResponse[RiderInvitationResponse])
 async def accept_invitation(
     invitation_id: int,

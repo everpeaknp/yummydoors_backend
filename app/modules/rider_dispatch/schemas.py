@@ -32,6 +32,7 @@ class RiderInvitationActionRequest(BaseModel):
 class RiderInvitationResponse(BaseModel):
     id: int
     restaurant_id: int
+    restaurant_name: str | None = None
     inviter_user_id: int
     invited_user_id: int | None = None
     invited_email: str

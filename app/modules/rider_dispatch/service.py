@@ -56,13 +56,64 @@ class RiderDispatchService:
         await self.session.flush()
         await self.session.commit()
         await self.session.refresh(invitation)
+        if invited_user is not None:
+            payload = {
+                "event": "rider_team_invitation",
+                "event_id": f"rider-invitation-{invitation.id}",
+                "audience": "rider",
+                "category": "rider_team_invitation",
+                "invitation_id": invitation.id,
+                "restaurant_id": restaurant.id,
+                "restaurant_name": restaurant.name,
+                "invitation_type": invitation.invitation_type,
+                "title": "Restaurant rider invitation",
+                "body": f"{restaurant.name} invited you to join as a {invitation.invitation_type.replace('_', ' ')} rider.",
+                "deep_link": "/rider",
+            }
+            try:
+                await self.notifications.create_notification_from_payload(
+                    recipient_user_id=invited_user.id,
+                    payload=payload,
+                    actor_user_id=merchant_user_id,
+                )
+            except Exception:
+                pass
+            try:
+                await self.notifications.send_web_push_to_user(
+                    user_id=invited_user.id,
+                    payload=payload,
+                )
+                await self.notifications.send_fcm_to_user(
+                    user_id=invited_user.id,
+                    payload=payload,
+                )
+            except Exception:
+                pass
         return self._build_invitation_response(invitation)
 
     async def list_invitations_for_restaurant(self, merchant_user_id: int, restaurant_id: int) -> list[RiderInvitationResponse]:
         await self._require_managed_restaurant(merchant_user_id, restaurant_id)
         result = await self.session.execute(
             select(RestaurantRiderInvitation)
+            .options(selectinload(RestaurantRiderInvitation.restaurant))
             .where(RestaurantRiderInvitation.restaurant_id == restaurant_id)
+            .order_by(RestaurantRiderInvitation.created_at.desc())
+        )
+        return [self._build_invitation_response(item) for item in result.scalars().all()]
+
+    async def list_invitations_for_rider(self, *, user: User) -> list[RiderInvitationResponse]:
+        result = await self.session.execute(
+            select(RestaurantRiderInvitation)
+            .options(selectinload(RestaurantRiderInvitation.restaurant))
+            .where(
+                or_(
+                    RestaurantRiderInvitation.invited_user_id == user.id,
+                    and_(
+                        RestaurantRiderInvitation.invited_user_id.is_(None),
+                        RestaurantRiderInvitation.invited_email == (user.email or "").strip().lower(),
+                    ),
+                )
+            )
             .order_by(RestaurantRiderInvitation.created_at.desc())
         )
         return [self._build_invitation_response(item) for item in result.scalars().all()]
@@ -462,7 +513,7 @@ class RiderDispatchService:
         if assignment_types.intersection({"rider_private", "private_rider"}):
             return "rider_private"
         if assignment_types.intersection({"rider_preferred", "preferred_rider"}):
-            return "open"
+            return "rider_preferred"
         if "rider" in {role.role.code for role in user.roles} and user.rider_work_mode == "freelance":
             return "open"
         if assignment_types.intersection({"rider", "rider_open", "open_rider"}):
@@ -538,6 +589,7 @@ class RiderDispatchService:
         return RiderInvitationResponse(
             id=invitation.id,
             restaurant_id=invitation.restaurant_id,
+            restaurant_name=invitation.restaurant.name if invitation.restaurant is not None else None,
             inviter_user_id=invitation.inviter_user_id,
             invited_user_id=invitation.invited_user_id,
             invited_email=invitation.invited_email,
