@@ -65,7 +65,7 @@ def test_offline_private_rider_still_receives_assigned_restaurant_offers():
     assert candidate.assignment_type == "rider_private"
 
 
-def test_legacy_preferred_relationship_is_treated_as_open_freelance():
+def test_preferred_relationship_is_treated_as_preferred_tier():
     service = RiderDispatchService(None)  # type: ignore[arg-type]
     preferred_assignment = _assignment(9, "rider_preferred")
 
@@ -76,7 +76,7 @@ def test_legacy_preferred_relationship_is_treated_as_open_freelance():
     )
 
     assert candidate is not None
-    assert candidate.assignment_type == "open"
+    assert candidate.assignment_type == "rider_preferred"
 
 
 def test_rider_order_response_exposes_targeted_offer_metadata():
