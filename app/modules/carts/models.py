@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 import enum
 
-from sqlalchemy import Boolean, Integer, String, Float, ForeignKey, Enum as SQLEnum
+from sqlalchemy import Boolean, Integer, String, Float, ForeignKey, Enum as SQLEnum, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
@@ -53,6 +53,8 @@ class CartItem(Base, TimestampMixin):
     cart_id: Mapped[int] = mapped_column(ForeignKey("carts.id", ondelete="CASCADE"), nullable=False)
     menu_item_id: Mapped[int] = mapped_column(ForeignKey("menu_items.id", ondelete="CASCADE"), nullable=False)
     quantity: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    modifier_ids: Mapped[list[int]] = mapped_column(JSON, default=list, nullable=False)
+    add_on_selections: Mapped[list[dict]] = mapped_column(JSON, default=list, nullable=False)
 
     cart: Mapped[Cart] = relationship(back_populates="items")
     menu_item: Mapped["MenuItem"] = relationship(foreign_keys=[menu_item_id])

@@ -72,8 +72,32 @@ class OrderRepository:
                     order_id=order.id,
                     menu_item_id=item.menu_item_id,
                     name=item.menu_item.name,
-                    price=item.menu_item.price,
+                    price=item.menu_item.price
+                    + sum(
+                        option.price_adjustment
+                        for group in item.menu_item.modifier_groups
+                        for option in group.items
+                        if option.id in item.modifier_ids
+                    )
+                    + sum(
+                        add_on.price * int(selection.get("quantity", 1))
+                        for add_on in item.menu_item.add_ons
+                        for selection in item.add_on_selections
+                        if add_on.id == int(selection["add_on_id"])
+                    ),
                     quantity=item.quantity
+                    ,modifier_snapshot=[
+                        {"id": option.id, "name": option.name, "price_adjustment": option.price_adjustment}
+                        for group in item.menu_item.modifier_groups
+                        for option in group.items
+                        if option.id in item.modifier_ids
+                    ],
+                    add_on_snapshot=[
+                        {"id": add_on.id, "name": add_on.name, "price": add_on.price, "quantity": int(selection.get("quantity", 1))}
+                        for add_on in item.menu_item.add_ons
+                        for selection in item.add_on_selections
+                        if add_on.id == int(selection["add_on_id"])
+                    ],
                 )
                 self.session.add(order_item)
 

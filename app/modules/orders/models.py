@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING
 import enum
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Integer, String, Float, ForeignKey, Enum as SQLEnum
+from sqlalchemy import Boolean, DateTime, Integer, String, Float, ForeignKey, Enum as SQLEnum, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
@@ -80,5 +80,7 @@ class OrderItem(Base, TimestampMixin):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     price: Mapped[float] = mapped_column(Float, nullable=False)
     quantity: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    modifier_snapshot: Mapped[list[dict]] = mapped_column(JSON, default=list, nullable=False)
+    add_on_snapshot: Mapped[list[dict]] = mapped_column(JSON, default=list, nullable=False)
 
     order: Mapped[Order] = relationship(back_populates="items")

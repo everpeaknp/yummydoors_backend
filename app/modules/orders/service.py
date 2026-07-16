@@ -146,7 +146,13 @@ class OrderService:
 
     def _format_order_response(self, order: Order) -> OrderResponse:
         items = [
-            OrderItemResponse(name=item.name, price=item.price, quantity=item.quantity)
+            OrderItemResponse(
+                name=item.name,
+                price=item.price,
+                quantity=item.quantity,
+                modifier_selections=item.modifier_snapshot,
+                add_on_selections=item.add_on_snapshot,
+            )
             for item in order.items
         ]
 
@@ -227,7 +233,13 @@ class OrderService:
         rider_offer=None,
     ) -> MerchantOrderResponse:
         items = [
-            OrderItemResponse(name=item.name, price=item.price, quantity=item.quantity)
+            OrderItemResponse(
+                name=item.name,
+                price=item.price,
+                quantity=item.quantity,
+                modifier_selections=item.modifier_snapshot,
+                add_on_selections=item.add_on_snapshot,
+            )
             for item in order.items
         ]
         address = None
@@ -396,7 +408,7 @@ class OrderService:
         return self._format_order_response(order)
 
     async def calculate_summary(self, payload: OrderSummaryRequest) -> OrderSummaryResponse:
-        from app.modules.catalog.models import MenuItem, MenuModifierItem
+        from app.modules.catalog.models import MenuAddOn, MenuItem, MenuModifierItem
 
         items_total = 0.0
         response_items = []
@@ -410,12 +422,23 @@ class OrderService:
             all_mod_ids = []
             for req_item in payload.items:
                 all_mod_ids.extend(req_item.modifier_ids)
+            all_add_on_ids = [
+                selection["add_on_id"]
+                for req_item in payload.items
+                for selection in req_item.add_on_selections
+            ]
 
             modifiers_map = {}
             if all_mod_ids:
                 mod_stmt = select(MenuModifierItem).where(MenuModifierItem.id.in_(all_mod_ids))
                 mod_result = await self.session.execute(mod_stmt)
                 modifiers_map = {mod.id: mod for mod in mod_result.scalars().all()}
+            add_ons_map = {}
+            if all_add_on_ids:
+                add_on_result = await self.session.execute(
+                    select(MenuAddOn).where(MenuAddOn.id.in_(all_add_on_ids))
+                )
+                add_ons_map = {add_on.id: add_on for add_on in add_on_result.scalars().all()}
 
             for req_item in payload.items:
                 menu_item = menu_items_map.get(req_item.menu_item_id)
@@ -434,6 +457,19 @@ class OrderService:
                             mod_names.append(mod.name)
                     if mod_names:
                         item_name += f" ({', '.join(mod_names)})"
+                for selection in req_item.add_on_selections:
+                    add_on = add_ons_map.get(selection["add_on_id"])
+                    quantity = selection.get("quantity", 1)
+                    if (
+                        add_on is None
+                        or add_on.menu_item_id != menu_item.id
+                        or not add_on.is_available
+                        or quantity < 1
+                        or quantity > add_on.max_quantity
+                    ):
+                        raise HTTPException(status_code=400, detail="Invalid or unavailable add-on selection.")
+                    item_price += add_on.price * quantity
+                    item_name += f" + {add_on.name}"
 
                 line_total = item_price * req_item.quantity
                 items_total += line_total

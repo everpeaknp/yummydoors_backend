@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+import re
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy import select
@@ -18,6 +19,9 @@ from app.modules.admin.schemas import (
     AdminMenuItemCreate,
     AdminMenuItemResponse,
     AdminMenuItemUpdate,
+    AdminModifierGroupCreate,
+    AdminModifierItemCreate,
+    AdminAddOnCreate,
     AdminPromoCreate,
     AdminPromoResponse,
     AdminPromoUpdate,
@@ -27,7 +31,7 @@ from app.modules.admin.schemas import (
 )
 from app.modules.auth.deps import require_role
 from app.modules.auth.models import User
-from app.modules.catalog.models import MenuItem
+from app.modules.catalog.models import MenuAddOn, MenuItem, MenuModifierGroup, MenuModifierItem
 from app.modules.merchandising.models import PromoBanner
 from app.modules.merchandising.service import MerchandisingService
 from app.modules.reservations.models import ReservationStatus
@@ -44,6 +48,37 @@ from app.schemas.common import ApiResponse
 from app.services.cloudinary_service import CloudinaryService
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
+
+
+def _normalize_name(value: str, label: str) -> str:
+    normalized = " ".join(value.strip().split())
+    if not normalized:
+        raise HTTPException(status_code=400, detail=f"{label} is required.")
+    return normalized[0].upper() + normalized[1:]
+
+
+async def _unique_category_slug(db: AsyncSession, name: str, current_id: int | None = None) -> str:
+    base = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "category"
+    candidate = base
+    counter = 2
+    while True:
+        result = await db.execute(select(Category.id).where(Category.slug == candidate, Category.id != current_id if current_id else True))
+        if result.scalar_one_or_none() is None:
+            return candidate
+        candidate = f"{base}-{counter}"
+        counter += 1
+
+
+async def _unique_menu_slug(db: AsyncSession, restaurant_id: int, name: str, current_id: int | None = None) -> str:
+    base = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "item"
+    candidate = base
+    counter = 2
+    while True:
+        result = await db.execute(select(MenuItem.id).where(MenuItem.restaurant_id == restaurant_id, MenuItem.slug == candidate, MenuItem.id != current_id if current_id else True))
+        if result.scalar_one_or_none() is None:
+            return candidate
+        candidate = f"{base}-{counter}"
+        counter += 1
 
 
 def _restaurant_query():
@@ -171,7 +206,9 @@ async def list_categories(db: AsyncSession = Depends(get_db)):
     dependencies=[Depends(require_role(["super_admin"]))],
 )
 async def create_category(payload: AdminCategoryCreate, db: AsyncSession = Depends(get_db)):
-    category = Category(**payload.model_dump())
+    name = _normalize_name(payload.name, "Category name")
+    slug = payload.slug.strip().lower() if payload.slug else await _unique_category_slug(db, name)
+    category = Category(**payload.model_dump(exclude={"slug"}), name=name, slug=slug)
     db.add(category)
     await db.commit()
     await db.refresh(category)
@@ -312,7 +349,9 @@ async def list_menu_items(db: AsyncSession = Depends(get_db)):
     dependencies=[Depends(require_role(["super_admin"]))],
 )
 async def create_menu_item(payload: AdminMenuItemCreate, db: AsyncSession = Depends(get_db)):
-    menu_item = MenuItem(**payload.model_dump())
+    name = _normalize_name(payload.name, "Menu item name")
+    slug = payload.slug.strip().lower() if payload.slug else await _unique_menu_slug(db, payload.restaurant_id, name)
+    menu_item = MenuItem(**payload.model_dump(exclude={"slug"}), name=name, slug=slug)
     db.add(menu_item)
     await db.commit()
     await db.refresh(menu_item)
@@ -353,6 +392,52 @@ async def delete_menu_item(menu_item_id: int, db: AsyncSession = Depends(get_db)
     await db.delete(menu_item)
     await db.commit()
     return ApiResponse(message="Admin menu item deleted successfully.", data={"success": True})
+
+
+@router.post(
+    "/modifier-groups",
+    response_model=ApiResponse[dict],
+    dependencies=[Depends(require_role(["super_admin"]))],
+)
+async def create_modifier_group(payload: AdminModifierGroupCreate, db: AsyncSession = Depends(get_db)):
+    menu_item = await _get_menu_item_or_404(db, payload.menu_item_id)
+    if payload.min_selections > payload.max_selections:
+        raise HTTPException(status_code=400, detail="Minimum selections cannot exceed maximum selections.")
+    group = MenuModifierGroup(**payload.model_dump())
+    db.add(group)
+    await db.commit()
+    await db.refresh(group)
+    return ApiResponse(message="Modifier group created successfully.", data={"id": group.id, "menu_item_id": menu_item.id, "name": group.name})
+
+
+@router.post(
+    "/modifier-items",
+    response_model=ApiResponse[dict],
+    dependencies=[Depends(require_role(["super_admin"]))],
+)
+async def create_modifier_item(payload: AdminModifierItemCreate, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(MenuModifierGroup).where(MenuModifierGroup.id == payload.group_id))
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Modifier group not found.")
+    option = MenuModifierItem(**payload.model_dump())
+    db.add(option)
+    await db.commit()
+    await db.refresh(option)
+    return ApiResponse(message="Modifier option created successfully.", data={"id": option.id, "group_id": option.group_id, "name": option.name, "price_adjustment": option.price_adjustment})
+
+
+@router.post(
+    "/add-ons",
+    response_model=ApiResponse[dict],
+    dependencies=[Depends(require_role(["super_admin"]))],
+)
+async def create_add_on(payload: AdminAddOnCreate, db: AsyncSession = Depends(get_db)):
+    await _get_menu_item_or_404(db, payload.menu_item_id)
+    add_on = MenuAddOn(**payload.model_dump())
+    db.add(add_on)
+    await db.commit()
+    await db.refresh(add_on)
+    return ApiResponse(message="Add-on created successfully.", data={"id": add_on.id, "menu_item_id": add_on.menu_item_id, "name": add_on.name, "price": add_on.price, "max_quantity": add_on.max_quantity})
 
 
 @router.get(

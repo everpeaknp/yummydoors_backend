@@ -9,6 +9,8 @@ class OrderItemResponse(BaseModel):
     name: str
     price: float
     quantity: int
+    modifier_selections: list[dict] = []
+    add_on_selections: list[dict] = []
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -154,6 +156,7 @@ class OrderSummaryItemRequest(BaseModel):
     menu_item_id: int
     quantity: int = Field(gt=0, default=1)
     modifier_ids: list[int] = Field(default_factory=list)
+    add_on_selections: list[dict[str, int]] = Field(default_factory=list)
 
 class OrderSummaryRequest(BaseModel):
     restaurant_id: int

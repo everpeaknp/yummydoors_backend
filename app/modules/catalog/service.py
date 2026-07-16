@@ -1,9 +1,11 @@
 import re
 
 from fastapi import HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.catalog.repository import CatalogRepository
+from app.modules.catalog.models import MenuAddOn, MenuItem, MenuModifierGroup, MenuModifierItem
 from app.modules.catalog.schemas import MenuItemResponse, MenuItemSummary
 from app.modules.auth.models import User
 from app.modules.merchandising.schemas import MerchantPromoCreate, MerchantPromoUpdate, PromoBannerResponse
@@ -284,6 +286,62 @@ class CatalogService:
         if success:
             await self.repository.save()
         return success
+
+    async def _require_menu_item(self, user: User, restaurant_id: int, item_id: int) -> MenuItem:
+        await self._require_managed_restaurant(user, restaurant_id)
+        item = await self.repository.get_menu_item_by_id(item_id)
+        if item is None or item.restaurant_id != restaurant_id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Menu item not found.")
+        return item
+
+    async def create_modifier_group(self, user: User, restaurant_id: int, item_id: int, data: dict) -> MenuModifierGroup:
+        await self._require_menu_item(user, restaurant_id, item_id)
+        group = MenuModifierGroup(menu_item_id=item_id, **data)
+        self.repository.session.add(group)
+        await self.repository.save()
+        await self.repository.refresh(group)
+        return group
+
+    async def create_modifier_item(self, user: User, restaurant_id: int, group_id: int, data: dict) -> MenuModifierItem:
+        await self._require_managed_restaurant(user, restaurant_id)
+        result = await self.repository.session.execute(
+            select(MenuModifierGroup).join(MenuItem).where(MenuModifierGroup.id == group_id, MenuItem.restaurant_id == restaurant_id)
+        )
+        group = result.scalar_one_or_none()
+        if group is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Modifier group not found.")
+        option = MenuModifierItem(group_id=group_id, **data)
+        self.repository.session.add(option)
+        await self.repository.save()
+        await self.repository.refresh(option)
+        return option
+
+    async def create_add_on(self, user: User, restaurant_id: int, item_id: int, data: dict) -> MenuAddOn:
+        await self._require_menu_item(user, restaurant_id, item_id)
+        add_on = MenuAddOn(menu_item_id=item_id, **data)
+        self.repository.session.add(add_on)
+        await self.repository.save()
+        await self.repository.refresh(add_on)
+        return add_on
+
+    async def update_add_on(self, user: User, restaurant_id: int, add_on_id: int, data: dict) -> MenuAddOn:
+        await self._require_managed_restaurant(user, restaurant_id)
+        result = await self.repository.session.execute(
+            select(MenuAddOn).join(MenuItem).where(MenuAddOn.id == add_on_id, MenuItem.restaurant_id == restaurant_id)
+        )
+        add_on = result.scalar_one_or_none()
+        if add_on is None:
+            raise HTTPException(status_code=404, detail="Add-on not found.")
+        for key, value in data.items():
+            setattr(add_on, key, value)
+        await self.repository.save()
+        await self.repository.refresh(add_on)
+        return add_on
+
+    async def delete_add_on(self, user: User, restaurant_id: int, add_on_id: int) -> None:
+        add_on = await self.update_add_on(user, restaurant_id, add_on_id, {})
+        await self.repository.session.delete(add_on)
+        await self.repository.save()
 
     async def list_restaurant_promos(self, user: User, restaurant_id: int) -> list[PromoBannerResponse]:
         await self._require_managed_restaurant(user, restaurant_id)

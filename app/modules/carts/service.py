@@ -1,4 +1,6 @@
 from fastapi import HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.carts.models import Cart
@@ -61,7 +63,20 @@ class CartService:
         items_total = 0.0
         for item in cart.items:
             if item.menu_item:
-                items_total += item.menu_item.price * item.quantity
+                unit_price = item.menu_item.price
+                modifiers = {
+                    option.id: option.price_adjustment
+                    for group in item.menu_item.modifier_groups
+                    for option in group.items
+                    if option.is_available
+                }
+                add_ons = {add_on.id: add_on.price for add_on in item.menu_item.add_ons if add_on.is_available}
+                unit_price += sum(modifiers.get(modifier_id, 0.0) for modifier_id in item.modifier_ids)
+                unit_price += sum(
+                    add_ons.get(int(selection["add_on_id"]), 0.0) * int(selection.get("quantity", 1))
+                    for selection in item.add_on_selections
+                )
+                items_total += unit_price * item.quantity
 
         coupon_discount = self._resolve_coupon_discount(cart.coupon_code, items_total) if cart.coupon_code else 0.0
         delivery_fee = 0.0 if cart.coupon_code and cart.coupon_code.strip().upper() == "FREEDEL" else 100.0
@@ -96,6 +111,9 @@ class CartService:
                         name=item.menu_item.name,
                         price=item.menu_item.price,
                         image_url=item.menu_item.image_url,
+                        modifier_ids=item.modifier_ids,
+                        add_on_selections=item.add_on_selections,
+                        modifier_selections=[],
                     )
                 )
 
@@ -164,7 +182,47 @@ class CartService:
         if not cart:
             cart = await self.repo.create_cart(customer_id, restaurant_id)
 
-        await self.repo.add_item(cart.id, item_data.menu_item_id, item_data.quantity)
+        menu_item = next((item.menu_item for item in cart.items if item.menu_item_id == item_data.menu_item_id), None)
+        if menu_item is None:
+            from app.modules.catalog.models import MenuItem
+            from app.modules.catalog.models import MenuModifierGroup
+            result = await self.repo.session.execute(
+                select(MenuItem)
+                .options(
+                    selectinload(MenuItem.modifier_groups).selectinload(MenuModifierGroup.items),
+                    selectinload(MenuItem.add_ons),
+                )
+                .where(MenuItem.id == item_data.menu_item_id, MenuItem.restaurant_id == restaurant_id)
+            )
+            menu_item = result.scalar_one_or_none()
+        if menu_item is None or not menu_item.is_available:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Menu item is unavailable.")
+        modifier_options = {
+            option.id: option
+            for group in menu_item.modifier_groups
+            for option in group.items
+        }
+        for modifier_id in item_data.modifier_ids:
+            option = modifier_options.get(modifier_id)
+            if option is None or not option.is_available:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or unavailable modifier.")
+        selected_modifier_ids = set(item_data.modifier_ids)
+        for group in menu_item.modifier_groups:
+            group_ids = {option.id for option in group.items if option.is_available}
+            selected_count = len(selected_modifier_ids.intersection(group_ids))
+            if group.is_required and selected_count < group.min_selections:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Modifier group '{group.name}' requires more selections.")
+            if selected_count > group.max_selections:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Modifier group '{group.name}' allows at most {group.max_selections} selections.")
+        add_on_options = {add_on.id: add_on for add_on in menu_item.add_ons}
+        normalized_add_ons: list[dict[str, int]] = []
+        for selection in item_data.add_on_selections:
+            add_on = add_on_options.get(selection["add_on_id"])
+            quantity = selection.get("quantity", 1)
+            if add_on is None or not add_on.is_available or quantity < 1 or quantity > add_on.max_quantity:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or unavailable add-on selection.")
+            normalized_add_ons.append({"add_on_id": add_on.id, "quantity": quantity})
+        await self.repo.add_item(cart.id, item_data.menu_item_id, item_data.quantity, item_data.modifier_ids, normalized_add_ons)
         cart = await self.repo.get_active_cart(customer_id, restaurant_id)
         if cart is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cart not found")

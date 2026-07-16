@@ -54,6 +54,9 @@ class MenuItem(Base, TimestampMixin):
     modifier_groups: Mapped[list["MenuModifierGroup"]] = relationship(
         back_populates="menu_item", cascade="all, delete-orphan"
     )
+    add_ons: Mapped[list["MenuAddOn"]] = relationship(
+        back_populates="menu_item", cascade="all, delete-orphan", lazy="selectin"
+    )
 
 
 class MenuModifierGroup(Base):
@@ -86,3 +89,20 @@ class MenuModifierItem(Base):
     is_available: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     group: Mapped[MenuModifierGroup] = relationship(back_populates="items")
+
+
+class MenuAddOn(Base, TimestampMixin):
+    __tablename__ = "menu_add_ons"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    menu_item_id: Mapped[int] = mapped_column(
+        ForeignKey("menu_items.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    price: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    currency_code: Mapped[str] = mapped_column(String(10), default="NPR", nullable=False)
+    is_available: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    max_quantity: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+
+    menu_item: Mapped[MenuItem] = relationship(back_populates="add_ons")

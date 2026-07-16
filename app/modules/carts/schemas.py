@@ -6,6 +6,8 @@ from app.modules.carts.models import CartStatus
 class CartItemBase(BaseModel):
     menu_item_id: int
     quantity: int = Field(gt=0, default=1)
+    modifier_ids: list[int] = Field(default_factory=list)
+    add_on_selections: list[dict[str, int]] = Field(default_factory=list)
 
 
 class CartItemCreate(CartItemBase):
@@ -21,6 +23,8 @@ class CartItemResponse(CartItemBase):
     name: str
     price: float
     image_url: str | None
+    modifier_selections: list[dict] = []
+    add_on_selections: list[dict] = []
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -18,7 +18,7 @@ class AdminCategoryBase(BaseModel):
 
 
 class AdminCategoryCreate(AdminCategoryBase):
-    pass
+    slug: str | None = Field(default=None, max_length=100)
 
 
 class AdminCategoryUpdate(BaseModel):
@@ -150,7 +150,7 @@ class AdminMenuItemBase(BaseModel):
 
 
 class AdminMenuItemCreate(AdminMenuItemBase):
-    pass
+    slug: str | None = Field(default=None, max_length=255)
 
 
 class AdminMenuItemUpdate(BaseModel):
@@ -176,6 +176,31 @@ class AdminMenuItemResponse(AdminMenuItemBase):
     id: int
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class AdminModifierGroupCreate(BaseModel):
+    menu_item_id: int
+    name: str = Field(..., min_length=1, max_length=255)
+    is_required: bool = False
+    min_selections: int = Field(default=0, ge=0)
+    max_selections: int = Field(default=1, ge=1)
+
+
+class AdminModifierItemCreate(BaseModel):
+    group_id: int
+    name: str = Field(..., min_length=1, max_length=255)
+    price_adjustment: float = Field(default=0.0, ge=0)
+    is_available: bool = True
+
+
+class AdminAddOnCreate(BaseModel):
+    menu_item_id: int
+    name: str = Field(..., min_length=1, max_length=255)
+    description: str | None = Field(default=None, max_length=500)
+    price: float = Field(default=0.0, ge=0)
+    currency_code: str = Field(default="NPR", min_length=3, max_length=10)
+    is_available: bool = True
+    max_quantity: int = Field(default=1, ge=1, le=99)
 
 
 class AdminPromoBase(BaseModel):

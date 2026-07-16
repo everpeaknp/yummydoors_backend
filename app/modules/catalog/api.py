@@ -13,6 +13,13 @@ from app.modules.catalog.schemas import (
     MenuItemResponse,
     MenuItemSummary,
     MenuItemUpdate,
+    MenuAddOnResponse,
+    MenuAddOnBase,
+    MenuModifierGroupCreate,
+    MenuModifierGroupResponse,
+    MenuModifierItemCreate,
+    MenuModifierItemResponse,
+    MenuAddOnUpdate,
 )
 from app.modules.catalog.service import CatalogService
 from app.modules.favorites.repository import FavoritesRepository
@@ -205,6 +212,65 @@ async def delete_menu_item_api(
     if not success:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Menu item not found")
     return ApiResponse(message="Menu item deleted successfully.", data=None)
+
+
+@router.post("/merchant/restaurants/{restaurant_id}/menu-items/{item_id}/modifier-groups", response_model=ApiResponse[MenuModifierGroupResponse])
+async def create_modifier_group_api(
+    restaurant_id: int,
+    item_id: int,
+    payload: MenuModifierGroupCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    group = await CatalogService(db).create_modifier_group(current_user, restaurant_id, item_id, payload.model_dump())
+    return ApiResponse(message="Modifier group created successfully.", data=MenuModifierGroupResponse.model_validate(group))
+
+
+@router.post("/merchant/restaurants/{restaurant_id}/modifier-groups/{group_id}/items", response_model=ApiResponse[MenuModifierItemResponse])
+async def create_modifier_item_api(
+    restaurant_id: int,
+    group_id: int,
+    payload: MenuModifierItemCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    option = await CatalogService(db).create_modifier_item(current_user, restaurant_id, group_id, payload.model_dump())
+    return ApiResponse(message="Modifier option created successfully.", data=MenuModifierItemResponse.model_validate(option))
+
+
+@router.post("/merchant/restaurants/{restaurant_id}/menu-items/{item_id}/add-ons", response_model=ApiResponse[MenuAddOnResponse])
+async def create_add_on_api(
+    restaurant_id: int,
+    item_id: int,
+    payload: MenuAddOnBase,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    add_on = await CatalogService(db).create_add_on(current_user, restaurant_id, item_id, payload.model_dump())
+    return ApiResponse(message="Add-on created successfully.", data=MenuAddOnResponse.model_validate(add_on))
+
+
+@router.put("/merchant/restaurants/{restaurant_id}/add-ons/{add_on_id}", response_model=ApiResponse[MenuAddOnResponse])
+async def update_add_on_api(
+    restaurant_id: int,
+    add_on_id: int,
+    payload: MenuAddOnUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    add_on = await CatalogService(db).update_add_on(current_user, restaurant_id, add_on_id, payload.model_dump(exclude_unset=True))
+    return ApiResponse(message="Add-on updated successfully.", data=MenuAddOnResponse.model_validate(add_on))
+
+
+@router.delete("/merchant/restaurants/{restaurant_id}/add-ons/{add_on_id}", response_model=ApiResponse)
+async def delete_add_on_api(
+    restaurant_id: int,
+    add_on_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await CatalogService(db).delete_add_on(current_user, restaurant_id, add_on_id)
+    return ApiResponse(message="Add-on deleted successfully.", data=None)
 
 
 @router.get(

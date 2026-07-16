@@ -4,7 +4,7 @@ from sqlalchemy import select, and_
 from sqlalchemy.orm import selectinload
 
 from app.modules.carts.models import Cart, CartItem, CartStatus
-from app.modules.catalog.models import MenuItem
+from app.modules.catalog.models import MenuItem, MenuModifierGroup
 from app.modules.customers.models import CustomerAddress
 
 class CartRepository:
@@ -13,7 +13,8 @@ class CartRepository:
 
     async def get_active_cart(self, customer_id: int, restaurant_id: int) -> Optional[Cart]:
         stmt = select(Cart).options(
-            selectinload(Cart.items).selectinload(CartItem.menu_item),
+            selectinload(Cart.items).selectinload(CartItem.menu_item).selectinload(MenuItem.modifier_groups).selectinload(MenuModifierGroup.items),
+            selectinload(Cart.items).selectinload(CartItem.menu_item).selectinload(MenuItem.add_ons),
             selectinload(Cart.restaurant),
             selectinload(Cart.address),
         ).where(
@@ -28,7 +29,8 @@ class CartRepository:
 
     async def get_all_active_carts(self, customer_id: int) -> List[Cart]:
         stmt = select(Cart).options(
-            selectinload(Cart.items).selectinload(CartItem.menu_item),
+            selectinload(Cart.items).selectinload(CartItem.menu_item).selectinload(MenuItem.modifier_groups).selectinload(MenuModifierGroup.items),
+            selectinload(Cart.items).selectinload(CartItem.menu_item).selectinload(MenuItem.add_ons),
             selectinload(Cart.restaurant),
             selectinload(Cart.address),
         ).where(
@@ -58,7 +60,14 @@ class CartRepository:
         result = await self.session.execute(stmt)
         return result.scalars().first()
 
-    async def add_item(self, cart_id: int, menu_item_id: int, quantity: int) -> CartItem:
+    async def add_item(
+        self,
+        cart_id: int,
+        menu_item_id: int,
+        quantity: int,
+        modifier_ids: list[int],
+        add_on_selections: list[dict[str, int]],
+    ) -> CartItem:
         # Check if item exists in cart already
         stmt = select(CartItem).where(
             and_(CartItem.cart_id == cart_id, CartItem.menu_item_id == menu_item_id)
@@ -66,11 +75,17 @@ class CartRepository:
         result = await self.session.execute(stmt)
         existing_item = result.scalars().first()
 
-        if existing_item:
+        if existing_item and existing_item.modifier_ids == modifier_ids and existing_item.add_on_selections == add_on_selections:
             existing_item.quantity += quantity
             item = existing_item
         else:
-            item = CartItem(cart_id=cart_id, menu_item_id=menu_item_id, quantity=quantity)
+            item = CartItem(
+                cart_id=cart_id,
+                menu_item_id=menu_item_id,
+                quantity=quantity,
+                modifier_ids=modifier_ids,
+                add_on_selections=add_on_selections,
+            )
             self.session.add(item)
             
         await self.session.commit()

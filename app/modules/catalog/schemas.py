@@ -26,6 +26,52 @@ class MenuModifierGroupResponse(MenuModifierGroupBase):
     
     model_config = ConfigDict(from_attributes=True)
 
+
+class MenuAddOnBase(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    description: str | None = Field(default=None, max_length=500)
+    price: float = Field(default=0.0, ge=0)
+    currency_code: str = Field(default="NPR", min_length=3, max_length=10)
+    is_available: bool = True
+    max_quantity: int = Field(default=1, ge=1, le=99)
+
+
+class MenuAddOnResponse(MenuAddOnBase):
+    id: int
+    menu_item_id: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class MenuModifierGroupCreate(MenuModifierGroupBase):
+    pass
+
+
+class MenuModifierItemCreate(MenuModifierItemBase):
+    pass
+
+
+class MenuModifierGroupUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    is_required: bool | None = None
+    min_selections: int | None = Field(default=None, ge=0)
+    max_selections: int | None = Field(default=None, ge=1)
+
+
+class MenuModifierItemUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    price_adjustment: float | None = Field(default=None, ge=0)
+    is_available: bool | None = None
+
+
+class MenuAddOnUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    description: str | None = Field(default=None, max_length=500)
+    price: float | None = Field(default=None, ge=0)
+    currency_code: str | None = Field(default=None, min_length=3, max_length=10)
+    is_available: bool | None = None
+    max_quantity: int | None = Field(default=None, ge=1, le=99)
+
 class MenuItemCreate(BaseModel):
     name: str = Field(..., max_length=255)
     slug: str | None = Field(default=None, max_length=255)
@@ -96,6 +142,7 @@ class MenuItemResponse(MenuItemBase):
     restaurant_id: int
     category_id: Optional[int] = None
     modifier_groups: List[MenuModifierGroupResponse] = []
+    add_ons: List[MenuAddOnResponse] = []
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -104,5 +151,6 @@ class MenuItemSummary(MenuItemBase):
     restaurant_id: int
     category_id: Optional[int] = None
     modifier_groups: List[MenuModifierGroupResponse] = []
+    add_ons: List[MenuAddOnResponse] = []
 
     model_config = ConfigDict(from_attributes=True)
