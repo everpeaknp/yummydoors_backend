@@ -361,28 +361,44 @@ class RiderDispatchService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Offer not found.")
         if offer.rider_user_id != user.id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This offer is not assigned to you.")
-        if offer.status != "pending":
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Offer is no longer pending.")
-        if offer.expires_at and offer.expires_at < datetime.now(UTC):
-            offer.status = "expired"
-            await self.session.commit()
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Offer already expired.")
-
         order = await self.order_repo.get_by_id(offer.order_id)
         if order is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found.")
-        if order.rider_user_id is not None:
+        now = datetime.now(UTC)
+        if offer.status != "pending":
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Offer is no longer pending.")
+
+        claimed_offer = await self.session.execute(
+            update(OrderDispatchOffer)
+            .where(
+                OrderDispatchOffer.id == offer.id,
+                OrderDispatchOffer.rider_user_id == user.id,
+                OrderDispatchOffer.status == "pending",
+                or_(OrderDispatchOffer.expires_at.is_(None), OrderDispatchOffer.expires_at > now),
+            )
+            .values(status="accepted", responded_at=now)
+        )
+        if claimed_offer.rowcount != 1:
+            await self.session.rollback()
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Offer is expired or no longer pending.")
+
+        claimed_order = await self.session.execute(
+            update(Order)
+            .where(Order.id == order.id, Order.rider_user_id.is_(None))
+            .values(
+                rider_user_id=user.id,
+                rider_assigned_at=order.rider_assigned_at or now,
+                status=OrderStatus.preparing if order.status == OrderStatus.placed else order.status,
+                preparing_at=order.preparing_at or (now if order.status == OrderStatus.placed else None),
+                rider_assignment_state="assigned",
+                rider_assignment_tier=offer.tier,
+                rider_offer_expires_at=None,
+            )
+        )
+        if claimed_order.rowcount != 1:
+            await self.session.rollback()
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This order has already been assigned to another rider.")
-        order.rider_user_id = user.id
-        order.rider_assigned_at = order.rider_assigned_at or datetime.now(UTC)
-        if order.status == OrderStatus.placed:
-            order.status = OrderStatus.preparing
-            order.preparing_at = order.preparing_at or datetime.now(UTC)
-        order.rider_assignment_state = "assigned"
-        order.rider_assignment_tier = offer.tier
-        order.rider_offer_expires_at = None
-        offer.status = "accepted"
-        offer.responded_at = datetime.now(UTC)
+
         await self.session.execute(
             update(OrderDispatchOffer)
             .where(
@@ -393,6 +409,8 @@ class RiderDispatchService:
             .values(status="expired", responded_at=datetime.now(UTC))
         )
         await self.session.commit()
+        offer.status = "accepted"
+        offer.responded_at = now
         await self.session.refresh(offer)
         return self._build_offer_response(offer)
 
@@ -426,11 +444,21 @@ class RiderDispatchService:
         offer.responded_at = datetime.now(UTC)
         order = await self.order_repo.get_by_id(offer.order_id)
         if order is not None and order.rider_user_id is None:
-            order.rider_assignment_state = "unassigned"
-            order.rider_assignment_tier = None
-            order.rider_offer_expires_at = None
+            pending_result = await self.session.execute(
+                select(OrderDispatchOffer.id).where(
+                    OrderDispatchOffer.order_id == order.id,
+                    OrderDispatchOffer.status == "pending",
+                    or_(OrderDispatchOffer.expires_at.is_(None), OrderDispatchOffer.expires_at > datetime.now(UTC)),
+                )
+            )
+            has_pending_offers = pending_result.scalar() is not None
+            if not has_pending_offers:
+                order.rider_assignment_state = "unassigned"
+                order.rider_assignment_tier = None
+                order.rider_offer_expires_at = None
         await self.session.commit()
-        await self.dispatch_next_offer(order_id=offer.order_id)
+        if order is None or order.rider_user_id is None:
+            await self.dispatch_next_offer(order_id=offer.order_id)
 
     async def _notify_rider_offer(self, order: Order, offer: OrderDispatchOffer) -> None:
         payload = {
