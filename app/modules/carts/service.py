@@ -113,7 +113,12 @@ class CartService:
                         image_url=item.menu_item.image_url,
                         modifier_ids=item.modifier_ids,
                         add_on_selections=item.add_on_selections,
-                        modifier_selections=[],
+                        modifier_selections=[
+                            {"id": option.id, "name": option.name, "price_adjustment": option.price_adjustment}
+                            for group in item.menu_item.modifier_groups
+                            for option in group.items
+                            if option.id in item.modifier_ids
+                        ],
                     )
                 )
 
