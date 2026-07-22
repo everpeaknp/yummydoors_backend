@@ -575,6 +575,8 @@ class OrderService:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to modify this order.")
 
         previous_status = order.status
+        if new_status == OrderStatus.delivered:
+            self._validate_merchant_delivery(order)
         # Update order status
         order.status = new_status
         now = datetime.now(UTC)
@@ -604,6 +606,14 @@ class OrderService:
         if order is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found.")
         return self._format_merchant_order_response(order)
+
+    @staticmethod
+    def _validate_merchant_delivery(order: Order) -> None:
+        if order.rider_user_id is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Assigned riders must mark orders as delivered.",
+            )
 
     async def assign_rider_to_order(
         self,

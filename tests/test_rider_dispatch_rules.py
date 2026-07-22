@@ -1,8 +1,12 @@
 from types import SimpleNamespace
 
+import pytest
+from fastapi import HTTPException
+
 from app.modules.orders.models import OrderStatus
 from app.modules.orders.schemas import MerchantOrderResponse
 from app.modules.rider_dispatch.service import RiderDispatchService
+from app.modules.orders.service import OrderService
 
 
 def _role(code: str):
@@ -97,3 +101,19 @@ def test_rider_order_response_exposes_targeted_offer_metadata():
 
     assert response.riderOfferId == 9
     assert response.riderOfferTier == "manual"
+
+
+def test_merchant_cannot_mark_rider_assigned_order_delivered():
+    service = OrderService(None)  # type: ignore[arg-type]
+    order = SimpleNamespace(rider_user_id=17)
+
+    with pytest.raises(HTTPException) as exc:
+        service._validate_merchant_delivery(order)
+
+    assert exc.value.status_code == 409
+
+
+def test_merchant_can_mark_unassigned_order_delivered():
+    service = OrderService(None)  # type: ignore[arg-type]
+
+    service._validate_merchant_delivery(SimpleNamespace(rider_user_id=None))
