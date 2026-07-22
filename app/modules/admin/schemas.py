@@ -8,6 +8,35 @@ from app.modules.catalog.models import FoodType
 from app.modules.merchandising.models import PromoPlacement, PromoTargetType
 
 
+class AdminOperatorResponse(BaseModel):
+    id: int
+    email: str | None
+    phone: str | None
+    full_name: str
+    status: str
+    roles: list[str]
+    restaurant_ids: list[int]
+    workspace_ids: list[int]
+
+
+class AdminUserStatusUpdate(BaseModel):
+    status: str = Field(..., pattern="^(active|suspended)$")
+
+
+class AdminWorkspaceStatusResponse(BaseModel):
+    id: int
+    name: str
+    workspace_type: str
+    status: str
+    primary_restaurant_id: int | None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AdminWorkspaceStatusUpdate(BaseModel):
+    status: str = Field(..., pattern="^(active|suspended)$")
+
+
 class AdminCategoryBase(BaseModel):
     slug: str = Field(..., max_length=100)
     name: str = Field(..., max_length=100)

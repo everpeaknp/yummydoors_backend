@@ -28,9 +28,14 @@ from app.modules.admin.schemas import (
     AdminRestaurantCreate,
     AdminRestaurantResponse,
     AdminRestaurantUpdate,
+    AdminOperatorResponse,
+    AdminUserStatusUpdate,
+    AdminWorkspaceStatusResponse,
+    AdminWorkspaceStatusUpdate,
 )
 from app.modules.auth.deps import require_role
-from app.modules.auth.models import User
+from app.modules.auth.models import Role, User, UserRole, UserStatus
+from app.modules.workspaces.models import Workspace
 from app.modules.catalog.models import MenuAddOn, MenuItem, MenuModifierGroup, MenuModifierItem
 from app.modules.merchandising.models import PromoBanner
 from app.modules.merchandising.service import MerchandisingService
@@ -48,6 +53,101 @@ from app.schemas.common import ApiResponse
 from app.services.cloudinary_service import CloudinaryService
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
+
+
+@router.get(
+    "/operators",
+    response_model=ApiResponse[list[AdminOperatorResponse]],
+    dependencies=[Depends(require_role(["super_admin"]))],
+)
+async def list_admin_operators(
+    domain: str = Query(..., pattern="^(rider|merchant)$"),
+    db: AsyncSession = Depends(get_db),
+):
+    role_code = "rider" if domain == "rider" else "restaurant_owner"
+    result = await db.execute(
+        select(User)
+        .join(UserRole, UserRole.user_id == User.id)
+        .join(Role, Role.id == UserRole.role_id)
+        .where(Role.code == role_code)
+        .options(selectinload(User.roles).selectinload(UserRole.role), selectinload(User.restaurant_assignments), selectinload(User.workspace_memberships))
+        .order_by(User.id.desc())
+    )
+    users = result.scalars().unique().all()
+    data = [
+        AdminOperatorResponse(
+            id=user.id,
+            email=user.email,
+            phone=user.phone,
+            full_name=user.full_name,
+            status=user.status,
+            roles=sorted({role.role.code for role in user.roles}),
+            restaurant_ids=sorted({assignment.restaurant_id for assignment in user.restaurant_assignments}),
+            workspace_ids=sorted({membership.workspace_id for membership in user.workspace_memberships}),
+        )
+        for user in users
+    ]
+    return ApiResponse(message="Admin operators fetched successfully.", data=data)
+
+
+@router.patch(
+    "/operators/{user_id}/status",
+    response_model=ApiResponse[AdminOperatorResponse],
+    dependencies=[Depends(require_role(["super_admin"]))],
+)
+async def update_admin_operator_status(
+    user_id: int,
+    payload: AdminUserStatusUpdate,
+    db: AsyncSession = Depends(get_db),
+):
+    user = await db.scalar(
+        select(User)
+        .where(User.id == user_id)
+        .options(selectinload(User.roles).selectinload(UserRole.role), selectinload(User.restaurant_assignments), selectinload(User.workspace_memberships))
+    )
+    if user is None or user.status == UserStatus.deleted:
+        raise HTTPException(status_code=404, detail="Operator not found.")
+    if any(role.role.code == "super_admin" for role in user.roles):
+        raise HTTPException(status_code=400, detail="Super admin accounts cannot be changed here.")
+    user.status = payload.status
+    user.is_active = payload.status == UserStatus.active
+    if payload.status == UserStatus.suspended:
+        user.is_accepting_offers = False
+    await db.commit()
+    return ApiResponse(
+        message="Operator status updated successfully.",
+        data=AdminOperatorResponse(
+            id=user.id, email=user.email, phone=user.phone, full_name=user.full_name,
+            status=user.status, roles=sorted({role.role.code for role in user.roles}),
+            restaurant_ids=sorted({assignment.restaurant_id for assignment in user.restaurant_assignments}),
+            workspace_ids=sorted({membership.workspace_id for membership in user.workspace_memberships}),
+        ),
+    )
+
+
+@router.get(
+    "/workspaces",
+    response_model=ApiResponse[list[AdminWorkspaceStatusResponse]],
+    dependencies=[Depends(require_role(["super_admin"]))],
+)
+async def list_admin_workspaces(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Workspace).where(Workspace.workspace_type == "merchant").order_by(Workspace.id.desc()))
+    return ApiResponse(message="Admin workspaces fetched successfully.", data=[AdminWorkspaceStatusResponse.model_validate(item) for item in result.scalars().all()])
+
+
+@router.patch(
+    "/workspaces/{workspace_id}/status",
+    response_model=ApiResponse[AdminWorkspaceStatusResponse],
+    dependencies=[Depends(require_role(["super_admin"]))],
+)
+async def update_admin_workspace_status(workspace_id: int, payload: AdminWorkspaceStatusUpdate, db: AsyncSession = Depends(get_db)):
+    workspace = await db.scalar(select(Workspace).where(Workspace.id == workspace_id, Workspace.workspace_type == "merchant"))
+    if workspace is None:
+        raise HTTPException(status_code=404, detail="Merchant workspace not found.")
+    workspace.status = payload.status
+    await db.commit()
+    await db.refresh(workspace)
+    return ApiResponse(message="Merchant workspace status updated successfully.", data=AdminWorkspaceStatusResponse.model_validate(workspace))
 
 
 def _normalize_name(value: str, label: str) -> str:
