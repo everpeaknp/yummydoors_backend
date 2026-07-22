@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import logging
 from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException, status
@@ -24,6 +25,9 @@ from app.modules.rider_dispatch.schemas import (
 from app.modules.restaurants.models import Restaurant, RestaurantUserAssignment
 from app.modules.workspaces.repository import WorkspaceRepository
 from app.modules.realtime.bus import ORDER_RIDER_CHANNEL, realtime_bus
+from app.tasks.notifications import send_email_task
+
+logger = logging.getLogger(__name__)
 
 
 class RiderDispatchService:
@@ -68,6 +72,19 @@ class RiderDispatchService:
         await self.session.flush()
         await self.session.commit()
         await self.session.refresh(invitation)
+        try:
+            send_email_task.delay(
+                recipient=invited_email,
+                subject=f"{restaurant.name} invited you to join its rider team",
+                body=(
+                    f"{restaurant.name} invited you to join as a "
+                    f"{invitation.invitation_type.replace('_', ' ')} rider.\n\n"
+                    "Sign in to your YummyDoors rider account to review and accept this invitation."
+                ),
+            )
+        except Exception:
+            # Invitation creation must remain available when Celery or SMTP is unavailable.
+            logger.exception("Failed to queue rider invitation email for %s", invited_email)
         if invited_user is not None:
             payload = {
                 "event": "rider_team_invitation",
