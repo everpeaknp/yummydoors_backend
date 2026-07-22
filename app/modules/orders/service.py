@@ -9,7 +9,7 @@ from app.modules.auth.models import User, UserRole
 from app.modules.analytics.service import apply_completed_order_loyalty
 from app.modules.carts.models import Cart, CartItem, CartStatus
 from app.modules.carts.repository import CartRepository
-from app.modules.catalog.models import MenuItem
+from app.modules.catalog.models import MenuItem, MenuModifierGroup
 from app.modules.customers.models import CustomerAddress
 from app.modules.orders.models import Order, OrderStatus
 from app.modules.orders.repository import OrderRepository
@@ -295,7 +295,11 @@ class OrderService:
         stmt = (
             select(Cart)
             .options(
-                selectinload(Cart.items).selectinload(CartItem.menu_item),
+                selectinload(Cart.items)
+                .selectinload(CartItem.menu_item)
+                .selectinload(MenuItem.modifier_groups)
+                .selectinload(MenuModifierGroup.items),
+                selectinload(Cart.items).selectinload(CartItem.menu_item).selectinload(MenuItem.add_ons),
                 selectinload(Cart.restaurant),
                 selectinload(Cart.address),
             )
