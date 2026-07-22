@@ -11,6 +11,7 @@ from sqlalchemy.orm import selectinload
 
 from app.modules.auth.models import Role, User, UserRole
 from app.modules.notifications.service import NotificationService
+from app.modules.auth.notifications import send_email_message
 from app.modules.orders.models import Order, OrderStatus
 from app.modules.orders.repository import OrderRepository
 from app.modules.orders.schemas import RiderSummaryResponse
@@ -83,8 +84,18 @@ class RiderDispatchService:
                 ),
             )
         except Exception:
-            # Invitation creation must remain available when Celery or SMTP is unavailable.
-            logger.exception("Failed to queue rider invitation email for %s", invited_email)
+            try:
+                await send_email_message(
+                    recipient=invited_email,
+                    subject=f"{restaurant.name} invited you to join its rider team",
+                    body=(
+                        f"{restaurant.name} invited you to join as a "
+                        f"{invitation.invitation_type.replace('_', ' ')} rider.\n\n"
+                        "Sign in to your YummyDoors rider account to review and accept this invitation."
+                    ),
+                )
+            except Exception:
+                logger.exception("Failed to send rider invitation email for %s", invited_email)
         if invited_user is not None:
             payload = {
                 "event": "rider_team_invitation",
