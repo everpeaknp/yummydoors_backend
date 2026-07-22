@@ -73,6 +73,7 @@ class RiderDispatchService:
         await self.session.flush()
         await self.session.commit()
         await self.session.refresh(invitation)
+        await self.session.refresh(invitation, ["restaurant"])
         try:
             send_email_task.delay(
                 recipient=invited_email,
@@ -140,6 +141,54 @@ class RiderDispatchService:
             .order_by(RestaurantRiderInvitation.created_at.desc())
         )
         return [self._build_invitation_response(item) for item in result.scalars().all()]
+
+    async def cancel_invitation(self, *, merchant_user_id: int, restaurant_id: int, invitation_id: int) -> RiderInvitationResponse:
+        await self._require_managed_restaurant(merchant_user_id, restaurant_id)
+        invitation = await self.session.get(RestaurantRiderInvitation, invitation_id)
+        if invitation is None or invitation.restaurant_id != restaurant_id:
+            raise HTTPException(status_code=404, detail="Invitation not found.")
+        if invitation.status not in {"pending", "sent"}:
+            raise HTTPException(status_code=400, detail="Only pending invitations can be cancelled.")
+        invitation.status = "cancelled"
+        invitation.responded_at = datetime.now(UTC)
+        await self.session.commit()
+        await self.session.refresh(invitation)
+        return self._build_invitation_response(invitation)
+
+    async def resend_invitation(self, *, merchant_user_id: int, restaurant_id: int, invitation_id: int) -> RiderInvitationResponse:
+        await self._require_managed_restaurant(merchant_user_id, restaurant_id)
+        invitation = await self.session.get(RestaurantRiderInvitation, invitation_id)
+        if invitation is None or invitation.restaurant_id != restaurant_id:
+            raise HTTPException(status_code=404, detail="Invitation not found.")
+        if invitation.status not in {"pending", "sent"}:
+            raise HTTPException(status_code=400, detail="Only pending invitations can be resent.")
+        invitation.status = "sent"
+        await self.session.commit()
+        await self.session.refresh(invitation)
+        await self.session.refresh(invitation, ["restaurant"])
+        try:
+            send_email_task.delay(
+                recipient=invitation.invited_email,
+                subject=f"{invitation.restaurant.name} invited you to join its rider team",
+                body=f"{invitation.restaurant.name} invited you to join as a {invitation.invitation_type} rider.\n\nSign in to YummyDoors to review and accept this invitation.",
+            )
+        except Exception:
+            logger.exception("Failed to resend rider invitation email for %s", invitation.invited_email)
+        return self._build_invitation_response(invitation)
+
+    async def remove_rider(self, *, merchant_user_id: int, restaurant_id: int, rider_user_id: int) -> None:
+        await self._require_managed_restaurant(merchant_user_id, restaurant_id)
+        assignment = await self.session.scalar(
+            select(RestaurantUserAssignment).where(
+                RestaurantUserAssignment.restaurant_id == restaurant_id,
+                RestaurantUserAssignment.user_id == rider_user_id,
+                RestaurantUserAssignment.assignment_type.in_({"rider_private", "rider_preferred", "private_rider", "preferred_rider"}),
+            )
+        )
+        if assignment is None:
+            raise HTTPException(status_code=404, detail="Rider team assignment not found.")
+        await self.session.delete(assignment)
+        await self.session.commit()
 
     async def list_invitations_for_rider(self, *, user: User) -> list[RiderInvitationResponse]:
         result = await self.session.execute(

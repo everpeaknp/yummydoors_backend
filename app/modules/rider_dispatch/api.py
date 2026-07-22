@@ -56,6 +56,21 @@ async def invite_rider(
     data = await service.invite_rider(merchant_user_id=current_user.id, restaurant_id=restaurant_id, payload=payload)
     return ApiResponse(message="Rider invitation created successfully.", data=data)
 
+@router.post("/restaurants/{restaurant_id}/invitations/{invitation_id}/resend", response_model=ApiResponse[RiderInvitationResponse])
+async def resend_invitation(restaurant_id: int, invitation_id: int, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    data = await RiderDispatchService(db).resend_invitation(merchant_user_id=current_user.id, restaurant_id=restaurant_id, invitation_id=invitation_id)
+    return ApiResponse(message="Rider invitation resent successfully.", data=data)
+
+@router.post("/restaurants/{restaurant_id}/invitations/{invitation_id}/cancel", response_model=ApiResponse[RiderInvitationResponse])
+async def cancel_invitation(restaurant_id: int, invitation_id: int, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    data = await RiderDispatchService(db).cancel_invitation(merchant_user_id=current_user.id, restaurant_id=restaurant_id, invitation_id=invitation_id)
+    return ApiResponse(message="Rider invitation cancelled successfully.", data=data)
+
+@router.delete("/restaurants/{restaurant_id}/riders/{rider_user_id}", response_model=ApiResponse[None])
+async def remove_rider(restaurant_id: int, rider_user_id: int, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    await RiderDispatchService(db).remove_rider(merchant_user_id=current_user.id, restaurant_id=restaurant_id, rider_user_id=rider_user_id)
+    return ApiResponse(message="Rider removed from restaurant team.", data=None)
+
 
 @router.get("/invitations/me", response_model=ApiResponse[list[RiderInvitationResponse]])
 async def list_my_invitations(
