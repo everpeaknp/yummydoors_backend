@@ -446,9 +446,17 @@ class WorkspaceService:
 
     def _collect_merchant_restaurants(self, user: User) -> dict[int, dict]:
         restaurant_map: dict[int, dict] = {}
+        workspace_restaurant_id = (
+            user.active_workspace.primary_restaurant_id
+            if user.active_workspace is not None
+            and user.active_workspace.workspace_type == "merchant"
+            else None
+        )
         for assignment in user.restaurant_assignments:
             restaurant = assignment.restaurant
             if restaurant is None:
+                continue
+            if workspace_restaurant_id is not None and restaurant.id != workspace_restaurant_id:
                 continue
             record = restaurant_map.setdefault(
                 restaurant.id,
