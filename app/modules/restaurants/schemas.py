@@ -35,10 +35,16 @@ class CategoryUpdate(BaseModel):
 
 class MerchantCategoryCreate(BaseModel):
     name: str
+    icon_url: str | None = None
+    sort_order: int = 0
+    is_featured: bool = False
 
 
 class MerchantCategoryUpdate(BaseModel):
     name: str | None = None
+    icon_url: str | None = None
+    sort_order: int | None = None
+    is_featured: bool | None = None
 
 
 class RestaurantCardSummary(BaseModel):

@@ -166,14 +166,17 @@ class CatalogService:
                 detail="Category name is required.",
             )
         slug = await self._build_unique_category_slug(name)
-        data = {"name": name, "slug": slug}
-        existing = await self.repository.get_category_by_slug(data["slug"])
+        category_data = {"name": name, "slug": slug}
+        for field in ("icon_url", "sort_order", "is_featured"):
+            if field in data:
+                category_data[field] = data[field]
+        existing = await self.repository.get_category_by_slug(category_data["slug"])
         if existing is not None:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="A category with this slug already exists.",
             )
-        category = await self.repository.create_category(data)
+        category = await self.repository.create_category(category_data)
         await self.repository.link_category_to_restaurant(restaurant_id, category.id)
         await self.repository.save()
         await self.repository.refresh(category)
