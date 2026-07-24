@@ -25,6 +25,7 @@ from app.modules.auth.schemas import (
     PasswordResetRequest,
     RoleSummary,
     RiderLocationUpdateRequest,
+    UserLocationUpdateRequest,
     RiderAvailabilityUpdateRequest,
     RiderWorkModeUpdateRequest,
     UserSummary,
@@ -513,6 +514,17 @@ class AuthService:
             except Exception:
                 # GPS persistence must not fail because realtime delivery is unavailable.
                 pass
+        return await self._build_user_summary(user)
+
+    async def update_user_location(
+        self,
+        user: User,
+        payload: UserLocationUpdateRequest,
+    ) -> UserSummary:
+        user.current_latitude = payload.latitude
+        user.current_longitude = payload.longitude
+        user.current_location_updated_at = datetime.now(UTC)
+        await self.repo.commit()
         return await self._build_user_summary(user)
 
     async def update_rider_work_mode(

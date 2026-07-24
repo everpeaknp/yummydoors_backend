@@ -58,6 +58,11 @@ class RiderLocationUpdateRequest(BaseModel):
     longitude: float
 
 
+class UserLocationUpdateRequest(BaseModel):
+    latitude: float
+    longitude: float
+
+
 class RiderWorkModeUpdateRequest(BaseModel):
     rider_work_mode: str = Field(pattern="^(freelance|assigned)$")
 

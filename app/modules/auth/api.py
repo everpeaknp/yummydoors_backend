@@ -14,6 +14,7 @@ from app.modules.auth.schemas import (
     RegisterRequest,
     RiderAvailabilityUpdateRequest,
     RiderLocationUpdateRequest,
+    UserLocationUpdateRequest,
     RiderWorkModeUpdateRequest,
     UserSummary,
 )
@@ -132,6 +133,16 @@ async def update_rider_location(
 ):
     data = await service.update_rider_location(user, payload, request)
     return ApiResponse(message="Rider location updated successfully.", data=data)
+
+
+@router.patch("/me/location", response_model=ApiResponse[UserSummary])
+async def update_location(
+    payload: UserLocationUpdateRequest,
+    user=Depends(get_current_user),
+    service: AuthService = Depends(get_auth_service),
+):
+    data = await service.update_user_location(user, payload)
+    return ApiResponse(message="Location updated successfully.", data=data)
 
 
 @router.patch("/me/rider-work-mode", response_model=ApiResponse[UserSummary])
