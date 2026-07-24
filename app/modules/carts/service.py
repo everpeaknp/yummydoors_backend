@@ -59,6 +59,18 @@ class CartService:
             detail="Invalid coupon code.",
         )
 
+    @staticmethod
+    def _add_on_selection_values(selection: dict) -> tuple[int, int]:
+        try:
+            add_on_id = int(selection["add_on_id"])
+            quantity = int(selection.get("quantity", 1))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid add-on selection.",
+            ) from exc
+        return add_on_id, quantity
+
     def _recalculate_cart_totals(self, cart: Cart) -> None:
         items_total = 0.0
         for item in cart.items:
@@ -72,10 +84,9 @@ class CartService:
                 }
                 add_ons = {add_on.id: add_on.price for add_on in item.menu_item.add_ons if add_on.is_available}
                 unit_price += sum(modifiers.get(modifier_id, 0.0) for modifier_id in item.modifier_ids)
-                unit_price += sum(
-                    add_ons.get(int(selection["add_on_id"]), 0.0) * int(selection.get("quantity", 1))
-                    for selection in item.add_on_selections
-                )
+                for selection in item.add_on_selections:
+                    add_on_id, quantity = self._add_on_selection_values(selection)
+                    unit_price += add_ons.get(add_on_id, 0.0) * quantity
                 items_total += unit_price * item.quantity
 
         coupon_discount = self._resolve_coupon_discount(cart.coupon_code, items_total) if cart.coupon_code else 0.0
@@ -222,8 +233,8 @@ class CartService:
         add_on_options = {add_on.id: add_on for add_on in menu_item.add_ons}
         normalized_add_ons: list[dict[str, int]] = []
         for selection in item_data.add_on_selections:
-            add_on = add_on_options.get(selection["add_on_id"])
-            quantity = selection.get("quantity", 1)
+            add_on_id, quantity = self._add_on_selection_values(selection)
+            add_on = add_on_options.get(add_on_id)
             if add_on is None or not add_on.is_available or quantity < 1 or quantity > add_on.max_quantity:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or unavailable add-on selection.")
             normalized_add_ons.append({"add_on_id": add_on.id, "quantity": quantity})

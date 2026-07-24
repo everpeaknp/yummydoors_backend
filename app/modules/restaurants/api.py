@@ -61,6 +61,7 @@ def build_category_summary(category: Category) -> CategorySummary:
         slug=category.slug,
         name=category.name,
         icon_url=category.icon_url,
+        web_image_url=category.web_image_url,
         sort_order=category.sort_order,
         is_featured=category.is_featured,
     )

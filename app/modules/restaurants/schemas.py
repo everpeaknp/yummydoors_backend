@@ -11,6 +11,7 @@ class CategorySummary(BaseModel):
     slug: str
     name: str
     icon_url: str | None = None
+    web_image_url: str | None = None
     sort_order: int
     is_featured: bool
 
@@ -21,6 +22,7 @@ class CategoryCreate(BaseModel):
     name: str
     slug: str
     icon_url: str | None = None
+    web_image_url: str | None = None
     sort_order: int = 0
     is_featured: bool = False
 
@@ -29,6 +31,7 @@ class CategoryUpdate(BaseModel):
     name: str | None = None
     slug: str | None = None
     icon_url: str | None = None
+    web_image_url: str | None = None
     sort_order: int | None = None
     is_featured: bool | None = None
 
@@ -36,15 +39,14 @@ class CategoryUpdate(BaseModel):
 class MerchantCategoryCreate(BaseModel):
     name: str
     icon_url: str | None = None
+    web_image_url: str | None = None
     sort_order: int = 0
-    is_featured: bool = False
 
 
 class MerchantCategoryUpdate(BaseModel):
     name: str | None = None
     icon_url: str | None = None
     sort_order: int | None = None
-    is_featured: bool | None = None
 
 
 class RestaurantCardSummary(BaseModel):

@@ -41,6 +41,7 @@ class AdminCategoryBase(BaseModel):
     slug: str = Field(..., max_length=100)
     name: str = Field(..., max_length=100)
     icon_url: str | None = Field(default=None, max_length=500)
+    web_image_url: str | None = Field(default=None, max_length=500)
     sort_order: int = 0
     is_featured: bool = True
     is_active: bool = True
@@ -54,6 +55,7 @@ class AdminCategoryUpdate(BaseModel):
     slug: str | None = Field(default=None, max_length=100)
     name: str | None = Field(default=None, max_length=100)
     icon_url: str | None = Field(default=None, max_length=500)
+    web_image_url: str | None = Field(default=None, max_length=500)
     sort_order: int | None = None
     is_featured: bool | None = None
     is_active: bool | None = None

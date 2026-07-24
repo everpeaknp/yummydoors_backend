@@ -167,7 +167,7 @@ class CatalogService:
             )
         slug = await self._build_unique_category_slug(name)
         category_data = {"name": name, "slug": slug}
-        for field in ("icon_url", "sort_order", "is_featured"):
+        for field in ("icon_url", "web_image_url", "sort_order", "is_featured"):
             if field in data:
                 category_data[field] = data[field]
         existing = await self.repository.get_category_by_slug(category_data["slug"])
