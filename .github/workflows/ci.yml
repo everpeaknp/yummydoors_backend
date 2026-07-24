@@ -132,6 +132,9 @@ jobs:
               set -- "$@" "$service"
             fi
           done
+          for container in yummydoors_app yummydoors_worker yummydoors_redis watchtower; do
+            docker rm -f "$container" 2>/dev/null || true
+          done
           docker compose up -d --force-recreate --remove-orphans "$@"
           running_image_id="$(docker inspect -f '{{.Image}}' yummydoors_app)"
           if [ "$running_image_id" != "$expected_image_id" ]; then
