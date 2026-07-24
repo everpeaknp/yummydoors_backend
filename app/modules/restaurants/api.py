@@ -870,7 +870,7 @@ async def get_home_feed(
         PromoPlacement.home_carousel, global_only=True
     )
     banner_promos = await merch_service.list_active_promos(
-        PromoPlacement.home_banner, global_only=True
+        PromoPlacement.home_banner, global_only=False
     )
     cookie_promos = await merch_service.list_active_promos(
         PromoPlacement.cookie_modal, global_only=True
