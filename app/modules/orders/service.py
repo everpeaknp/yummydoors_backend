@@ -379,7 +379,10 @@ class OrderService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cart not found")
 
         order = await self.repo.create_order_from_cart(
-            cart, payment_method=checkout_data.payment_method
+            cart,
+            payment_method=checkout_data.payment_method,
+            delivery_latitude=checkout_data.latitude,
+            delivery_longitude=checkout_data.longitude,
         )
 
         # Increment popularity_score on each ordered item (tracks sales count)

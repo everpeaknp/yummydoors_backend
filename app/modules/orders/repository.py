@@ -14,7 +14,14 @@ class OrderRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def create_order_from_cart(self, cart: Cart, *, payment_method: str) -> Order:
+    async def create_order_from_cart(
+        self,
+        cart: Cart,
+        *,
+        payment_method: str,
+        delivery_latitude: float | None = None,
+        delivery_longitude: float | None = None,
+    ) -> Order:
         # Generate unique order number
         order_number = f"ORD-{str(uuid.uuid4())[:8].upper()}"
 
@@ -49,8 +56,8 @@ class OrderRepository:
             ),
             delivery_recipient_name=delivery_address.recipient_name if delivery_address else None,
             delivery_phone_number=delivery_address.phone_number if delivery_address else None,
-            delivery_latitude=delivery_address.latitude if delivery_address else None,
-            delivery_longitude=delivery_address.longitude if delivery_address else None,
+            delivery_latitude=delivery_latitude if delivery_latitude is not None else delivery_address.latitude if delivery_address else None,
+            delivery_longitude=delivery_longitude if delivery_longitude is not None else delivery_address.longitude if delivery_address else None,
             coupon_code=cart.coupon_code,
             coupon_discount=cart.coupon_discount,
             delivery_fee=cart.delivery_fee,

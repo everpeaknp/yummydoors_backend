@@ -147,6 +147,8 @@ class RiderSummaryResponse(BaseModel):
 class CheckoutRequest(BaseModel):
     payment_method: str = "cash"
     address_id: int | None = None
+    latitude: float | None = None
+    longitude: float | None = None
     coupon_code: str | None = Field(default=None, max_length=64)
     needs_cutlery: bool | None = None
     cooking_request: str | None = Field(default=None, max_length=1000)
