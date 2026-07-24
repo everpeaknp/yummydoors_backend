@@ -283,6 +283,7 @@ class HomeFeedResponse(BaseModel):
     promos: list[PromoBannerResponse] = []
     hero_promos: list[PromoBannerResponse] = []
     banner_promos: list[PromoBannerResponse] = []
+    cookie_promos: list[PromoBannerResponse] = []
     recommended_items: list[MenuItemSummary] = []
     popular_foods: list[MenuItemSummary] = []
     featured_videos: list[FeaturedVideoResponse] = []

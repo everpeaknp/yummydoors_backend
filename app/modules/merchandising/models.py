@@ -14,6 +14,7 @@ from app.models.mixins import TimestampMixin
 class PromoPlacement(str, enum.Enum):
     home_carousel = "home_carousel"
     home_banner = "home_banner"
+    cookie_modal = "cookie_modal"
 
 
 class PromoTargetType(str, enum.Enum):

@@ -872,6 +872,9 @@ async def get_home_feed(
     banner_promos = await merch_service.list_active_promos(
         PromoPlacement.home_banner, global_only=True
     )
+    cookie_promos = await merch_service.list_active_promos(
+        PromoPlacement.cookie_modal, global_only=True
+    )
     promos = hero_promos if hero_promos else banner_promos
     featured_videos = await merch_service.list_active_featured_videos(limit=8)
 
@@ -892,6 +895,7 @@ async def get_home_feed(
         promos=promos,
         hero_promos=hero_promos,
         banner_promos=banner_promos,
+        cookie_promos=cookie_promos,
         recommended_items=recommended_items,
         popular_foods=popular_foods,
         featured_videos=featured_videos,
