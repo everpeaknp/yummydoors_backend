@@ -8,6 +8,7 @@ from sqlalchemy.orm import selectinload
 from app.modules.orders.models import Order, OrderItem, OrderStatus
 from app.modules.carts.models import Cart, CartStatus
 from app.modules.rider_dispatch.models import OrderDispatchOffer
+from app.modules.customers.models import CustomerAddress
 
 class OrderRepository:
     def __init__(self, session: AsyncSession):
@@ -18,6 +19,12 @@ class OrderRepository:
         order_number = f"ORD-{str(uuid.uuid4())[:8].upper()}"
 
         now = datetime.now(UTC)
+        delivery_address = cart.address
+        if cart.address_id is not None:
+            result = await self.session.execute(
+                select(CustomerAddress).where(CustomerAddress.id == cart.address_id)
+            )
+            delivery_address = result.scalars().first()
 
         order = Order(
             customer_id=cart.customer_id,
@@ -31,19 +38,19 @@ class OrderRepository:
                 ", ".join(
                     part
                     for part in [
-                        cart.address.address_line_1 if cart.address else None,
-                        cart.address.area if cart.address else None,
-                        cart.address.city if cart.address else None,
+                        delivery_address.address_line_1 if delivery_address else None,
+                        delivery_address.area if delivery_address else None,
+                        delivery_address.city if delivery_address else None,
                     ]
                     if part
                 )
-                if cart.address
+                if delivery_address
                 else None
             ),
-            delivery_recipient_name=cart.address.recipient_name if cart.address else None,
-            delivery_phone_number=cart.address.phone_number if cart.address else None,
-            delivery_latitude=cart.address.latitude if cart.address else None,
-            delivery_longitude=cart.address.longitude if cart.address else None,
+            delivery_recipient_name=delivery_address.recipient_name if delivery_address else None,
+            delivery_phone_number=delivery_address.phone_number if delivery_address else None,
+            delivery_latitude=delivery_address.latitude if delivery_address else None,
+            delivery_longitude=delivery_address.longitude if delivery_address else None,
             coupon_code=cart.coupon_code,
             coupon_discount=cart.coupon_discount,
             delivery_fee=cart.delivery_fee,
