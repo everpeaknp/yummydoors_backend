@@ -197,6 +197,9 @@ class CartService:
         cart = await self.repo.get_active_cart(customer_id, restaurant_id)
         if not cart:
             cart = await self.repo.create_cart(customer_id, restaurant_id)
+            cart = await self.repo.get_active_cart(customer_id, restaurant_id)
+            if cart is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cart not found")
 
         menu_item = next((item.menu_item for item in cart.items if item.menu_item_id == item_data.menu_item_id), None)
         if menu_item is None:
