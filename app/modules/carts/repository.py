@@ -92,8 +92,15 @@ class CartRepository:
         await self.session.refresh(item)
         return item
         
-    async def update_item_quantity(self, item_id: int, quantity: int) -> Optional[CartItem]:
-        stmt = select(CartItem).where(CartItem.id == item_id)
+    async def update_item_quantity(
+        self, item_id: int, customer_id: int, restaurant_id: int, quantity: int
+    ) -> Optional[CartItem]:
+        stmt = select(CartItem).join(Cart).where(
+            CartItem.id == item_id,
+            Cart.customer_id == customer_id,
+            Cart.restaurant_id == restaurant_id,
+            Cart.status == CartStatus.active,
+        )
         result = await self.session.execute(stmt)
         item = result.scalars().first()
         if item:
@@ -102,8 +109,13 @@ class CartRepository:
             await self.session.refresh(item)
         return item
 
-    async def remove_item(self, item_id: int) -> bool:
-        stmt = select(CartItem).where(CartItem.id == item_id)
+    async def remove_item(self, item_id: int, customer_id: int, restaurant_id: int) -> bool:
+        stmt = select(CartItem).join(Cart).where(
+            CartItem.id == item_id,
+            Cart.customer_id == customer_id,
+            Cart.restaurant_id == restaurant_id,
+            Cart.status == CartStatus.active,
+        )
         result = await self.session.execute(stmt)
         item = result.scalars().first()
         if item:

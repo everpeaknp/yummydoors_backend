@@ -15,6 +15,7 @@ from app.modules.carts.schemas import (
     CartPricingBreakdown,
     CartResponse,
 )
+from app.modules.restaurants.models import Restaurant
 
 
 class CartService:
@@ -194,6 +195,9 @@ class CartService:
         return await self._save_and_format(cart)
 
     async def add_item_to_cart(self, customer_id: int, restaurant_id: int, item_data: CartItemCreate) -> CartResponse:
+        restaurant = await self.repo.session.get(Restaurant, restaurant_id)
+        if restaurant is None or not restaurant.is_active:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Restaurant not found")
         cart = await self.repo.get_active_cart(customer_id, restaurant_id)
         if not cart:
             cart = await self.repo.create_cart(customer_id, restaurant_id)
@@ -248,7 +252,9 @@ class CartService:
         return await self._save_and_format(cart)
 
     async def update_item_quantity(self, customer_id: int, restaurant_id: int, item_id: int, update_data: CartItemUpdate) -> CartResponse:
-        item = await self.repo.update_item_quantity(item_id, update_data.quantity)
+        item = await self.repo.update_item_quantity(
+            item_id, customer_id, restaurant_id, update_data.quantity
+        )
         if not item:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cart item not found")
         cart = await self.repo.get_active_cart(customer_id, restaurant_id)
@@ -257,7 +263,7 @@ class CartService:
         return await self._save_and_format(cart)
 
     async def remove_item_from_cart(self, customer_id: int, restaurant_id: int, item_id: int) -> CartResponse:
-        success = await self.repo.remove_item(item_id)
+        success = await self.repo.remove_item(item_id, customer_id, restaurant_id)
         if not success:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cart item not found")
         cart = await self.repo.get_active_cart(customer_id, restaurant_id)

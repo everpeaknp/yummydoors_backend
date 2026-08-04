@@ -381,8 +381,6 @@ class OrderService:
         order = await self.repo.create_order_from_cart(
             cart,
             payment_method=checkout_data.payment_method,
-            delivery_latitude=checkout_data.latitude,
-            delivery_longitude=checkout_data.longitude,
         )
 
         # Increment popularity_score on each ordered item (tracks sales count)
@@ -415,31 +413,33 @@ class OrderService:
         return self._format_order_response(order)
 
     async def calculate_summary(self, payload: OrderSummaryRequest) -> OrderSummaryResponse:
-        from app.modules.catalog.models import MenuAddOn, MenuItem, MenuModifierItem
+        from app.modules.catalog.models import MenuAddOn, MenuItem
 
         items_total = 0.0
         response_items = []
 
         if payload.items:
             item_ids = [req_item.menu_item_id for req_item in payload.items]
-            stmt = select(MenuItem).where(MenuItem.id.in_(item_ids))
+            stmt = (
+                select(MenuItem)
+                .options(
+                    selectinload(MenuItem.modifier_groups).selectinload(MenuModifierGroup.items),
+                    selectinload(MenuItem.add_ons),
+                )
+                .where(
+                    MenuItem.id.in_(item_ids),
+                    MenuItem.restaurant_id == payload.restaurant_id,
+                )
+            )
             result = await self.session.execute(stmt)
             menu_items_map = {item.id: item for item in result.scalars().all()}
 
-            all_mod_ids = []
-            for req_item in payload.items:
-                all_mod_ids.extend(req_item.modifier_ids)
             all_add_on_ids = [
                 selection["add_on_id"]
                 for req_item in payload.items
                 for selection in req_item.add_on_selections
             ]
 
-            modifiers_map = {}
-            if all_mod_ids:
-                mod_stmt = select(MenuModifierItem).where(MenuModifierItem.id.in_(all_mod_ids))
-                mod_result = await self.session.execute(mod_stmt)
-                modifiers_map = {mod.id: mod for mod in mod_result.scalars().all()}
             add_ons_map = {}
             if all_add_on_ids:
                 add_on_result = await self.session.execute(
@@ -450,18 +450,24 @@ class OrderService:
             for req_item in payload.items:
                 menu_item = menu_items_map.get(req_item.menu_item_id)
                 if not menu_item:
-                    continue
+                    raise HTTPException(status_code=400, detail="Invalid menu item.")
 
                 item_price = menu_item.price
                 item_name = menu_item.name
 
                 if req_item.modifier_ids:
+                    modifier_options = {
+                        option.id: option
+                        for group in menu_item.modifier_groups
+                        for option in group.items
+                    }
                     mod_names = []
                     for mod_id in req_item.modifier_ids:
-                        mod = modifiers_map.get(mod_id)
-                        if mod:
-                            item_price += mod.price_adjustment
-                            mod_names.append(mod.name)
+                        mod = modifier_options.get(mod_id)
+                        if mod is None or not mod.is_available:
+                            raise HTTPException(status_code=400, detail="Invalid or unavailable modifier.")
+                        item_price += mod.price_adjustment
+                        mod_names.append(mod.name)
                     if mod_names:
                         item_name += f" ({', '.join(mod_names)})"
                 for selection in req_item.add_on_selections:
@@ -485,22 +491,29 @@ class OrderService:
                     OrderItemResponse(name=item_name, price=item_price, quantity=req_item.quantity)
                 )
 
-        # Basic fixed pricing logic (should ideally come from restaurant or distance)
-        delivery_fee = 100.0 if items_total > 0 else 0.0
+        normalized_coupon = payload.coupon_code.strip().upper() if payload.coupon_code else None
         coupon_discount = 0.0
-        if payload.coupon_code == "DISCOUNT50":
-            coupon_discount = 50.0
+        if normalized_coupon == "WELCOME50":
+            coupon_discount = min(50.0, items_total)
+        elif normalized_coupon == "SAVE10":
+            coupon_discount = round(items_total * 0.1, 2)
+        elif normalized_coupon not in {None, "FREEDEL"}:
+            raise HTTPException(status_code=400, detail="Invalid coupon code.")
 
-        subtotal = max(0, items_total - coupon_discount + delivery_fee)
+        delivery_fee = 0.0 if normalized_coupon == "FREEDEL" else (100.0 if items_total > 0 else 0.0)
+        service_fee = round(items_total * 0.05, 2)
+        tax_amount = round(items_total * 0.13, 2)
+        subtotal = round(items_total - coupon_discount, 2)
+        total = max(round(subtotal + delivery_fee + service_fee + tax_amount, 2), 0.0)
 
         pricing = OrderPricingBreakdown(
             items_total=items_total,
             coupon_discount=coupon_discount,
             delivery_fee=delivery_fee,
-            service_fee=0.0,
-            tax_amount=0.0,
+            service_fee=service_fee,
+            tax_amount=tax_amount,
             subtotal_amount=subtotal,
-            total_amount=subtotal,
+            total_amount=total,
         )
 
         return OrderSummaryResponse(items=response_items, pricing=pricing)

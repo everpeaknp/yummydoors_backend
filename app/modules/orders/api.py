@@ -606,24 +606,11 @@ def _with_rider_scope(payload: dict, rider_user_id: int | None) -> dict:
 
 def _resolve_merchant_restaurant_id_from_claims(
     *,
-    payload: dict,
     workspace,
     user,
 ) -> int | None:
     if workspace and workspace.workspace_type == "merchant" and workspace.primary_restaurant_id:
         return workspace.primary_restaurant_id
-
-    token_restaurant_id = payload.get("restaurant_id")
-    if isinstance(token_restaurant_id, int) and token_restaurant_id > 0:
-        return token_restaurant_id
-
-    token_restaurant_ids = payload.get("restaurant_ids")
-    if isinstance(token_restaurant_ids, list):
-        for item in token_restaurant_ids:
-            if isinstance(item, int) and item > 0:
-                return item
-            if isinstance(item, str) and item.isdigit():
-                return int(item)
 
     active_restaurant_id = getattr(user, "active_restaurant_id", None)
     if isinstance(active_restaurant_id, int) and active_restaurant_id > 0:
@@ -662,7 +649,6 @@ async def ws_merchant_orders(
     workspace_repo = WorkspaceRepository(db)
     workspace = await workspace_repo.get_active_workspace(user_id)
     restaurant_id = _resolve_merchant_restaurant_id_from_claims(
-        payload=payload,
         workspace=workspace,
         user=user,
     )
@@ -672,7 +658,7 @@ async def ws_merchant_orders(
             "merchant websocket rejected user_id=%s active_workspace=%s token_restaurant_id=%s",
             user_id,
             getattr(workspace, "workspace_type", None),
-            payload.get("restaurant_id") or payload.get("restaurant_ids"),
+            getattr(user, "active_restaurant_id", None),
         )
         await websocket.close(code=4003)
         return
