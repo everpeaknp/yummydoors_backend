@@ -32,6 +32,10 @@ class RedisRealtimeBus:
         self._started = False
         self._subscribed_channels: set[str] = set()
 
+    @property
+    def is_available(self) -> bool:
+        return self._started and self._client is not None
+
     def register_handler(self, channel: str, handler: RealtimeHandler) -> None:
         self._handlers[channel] = handler
         if self._started and self._pubsub is not None and channel not in self._subscribed_channels:

@@ -153,7 +153,12 @@ app.include_router(rider_applications_router, prefix=settings.api_v1_prefix)
 
 @app.get("/health")
 async def health() -> dict:
-    return {"status": "ok", "service": settings.app_name}
+    realtime_available = realtime_bus.is_available
+    return {
+        "status": "ok" if realtime_available else "degraded",
+        "service": settings.app_name,
+        "realtime": "ok" if realtime_available else "unavailable",
+    }
 
 @app.get("/version")
 async def get_version() -> dict:
