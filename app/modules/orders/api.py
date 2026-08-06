@@ -471,11 +471,12 @@ async def mark_rider_delivered(
 async def update_merchant_order_status(
     order_id: int,
     new_status: OrderStatus,
+    reason: str | None = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     service = OrderService(db)
-    updated = await service.update_merchant_order_status(current_user.id, order_id, new_status)
+    updated = await service.update_merchant_order_status(current_user.id, order_id, new_status, reason=reason)
 
     customer_payload = build_customer_order_event(updated, status_value=new_status.value)
     merchant_restaurant_id = updated.restaurantId

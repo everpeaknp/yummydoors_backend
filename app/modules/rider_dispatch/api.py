@@ -1,13 +1,24 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
 from app.modules.auth.deps import get_current_user, require_role
 from app.modules.auth.models import User
+from app.modules.orders.api import (
+    _with_customer_scope,
+    _with_restaurant_scope,
+    _with_rider_scope,
+    build_customer_order_event,
+    build_merchant_order_event,
+    build_rider_order_event,
+    safe_send_order_notifications,
+)
 from app.modules.orders.repository import OrderRepository
-from app.modules.orders.models import OrderStatus
+from app.modules.orders.service import OrderService
 from app.modules.realtime.bus import ORDER_CUSTOMER_CHANNEL, ORDER_MERCHANT_CHANNEL, ORDER_RIDER_CHANNEL, realtime_bus
 from app.modules.rider_dispatch.schemas import (
     RiderDispatchCandidateResponse,
@@ -20,6 +31,7 @@ from app.modules.rider_dispatch.service import RiderDispatchService
 from app.schemas.common import ApiResponse
 
 router = APIRouter(prefix="/rider-dispatch", tags=["Rider Dispatch"])
+logger = logging.getLogger(__name__)
 
 
 @router.get("/restaurants/{restaurant_id}/candidates", response_model=ApiResponse[list[RiderDispatchCandidateResponse]])
@@ -115,18 +127,43 @@ async def accept_offer(
     data = await service.accept_offer(user=current_user, offer_id=offer_id)
     order = await OrderRepository(db).get_by_id(data.order_id)
     if order is not None:
-        payload = {
-            "event": "order_update",
-            "order_id": order.id,
-            "order_number": order.order_number,
-            "status": (order.status.value if isinstance(order.status, OrderStatus) else str(order.status)),
-            "restaurant_id": order.restaurant_id,
-            "customer_id": order.customer_id,
-            "rider_user_id": current_user.id,
-        }
-        await realtime_bus.publish(ORDER_MERCHANT_CHANNEL, payload)
-        await realtime_bus.publish(ORDER_CUSTOMER_CHANNEL, payload)
-        await realtime_bus.publish(ORDER_RIDER_CHANNEL, payload)
+        order_service = OrderService(db)
+        updated = order_service._format_merchant_order_response(order)
+
+        customer_payload = build_customer_order_event(updated, status_value="rider_assigned")
+        merchant_payload = build_merchant_order_event(
+            order_id=updated.id,
+            order_number=updated.orderNumber,
+            restaurant_id=updated.restaurantId,
+            restaurant_name=updated.restaurantName,
+            customer_name=updated.customerName,
+            status_value="rider_assigned",
+            event_name="order_update",
+        )
+        rider_payload = build_rider_order_event(
+            order_id=updated.id,
+            order_number=updated.orderNumber,
+            restaurant_id=updated.restaurantId,
+            restaurant_name=updated.restaurantName,
+            status_value="rider_assigned",
+            event_name="rider_assigned",
+        )
+        try:
+            await realtime_bus.publish(ORDER_MERCHANT_CHANNEL, _with_restaurant_scope(merchant_payload, updated.restaurantId))
+            await realtime_bus.publish(ORDER_CUSTOMER_CHANNEL, _with_customer_scope(customer_payload, updated.customerId))
+            await realtime_bus.publish(ORDER_RIDER_CHANNEL, _with_rider_scope(rider_payload, current_user.id))
+        except Exception:
+            logger.exception("failed to publish rider offer acceptance websocket event")
+
+        await safe_send_order_notifications(
+            db=db,
+            customer_user_id=updated.customerId,
+            customer_payload=customer_payload,
+            merchant_restaurant_id=updated.restaurantId,
+            merchant_payload=merchant_payload,
+            rider_user_id=current_user.id,
+            rider_payload=rider_payload,
+        )
     return ApiResponse(message="Offer accepted successfully.", data=data)
 
 

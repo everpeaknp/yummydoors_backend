@@ -46,6 +46,35 @@ class FcmDeviceToken(Base, TimestampMixin):
     )
 
 
+class PushDeliveryFailure(Base, TimestampMixin):
+    """Outbox row for a push delivery that failed transiently.
+
+    Push failures used to be caught and logged inside `NotificationService`
+    with no record left behind, which meant the `autoretry_for=(Exception,)`
+    configured on the Celery push tasks never actually fired — the exception
+    never escaped the service method for Celery to see. This table makes
+    failures visible/auditable and the raised exception now lets Celery's
+    existing retry-with-backoff behavior work as intended. A row is deleted
+    once a later attempt for the same user/channel/target succeeds.
+    """
+
+    __tablename__ = "push_delivery_failures"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    channel: Mapped[str] = mapped_column(String(16), nullable=False)
+    target: Mapped[str] = mapped_column(String(1000), nullable=False)
+    event_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    last_error: Mapped[str] = mapped_column(String(1000), nullable=False)
+
+    user: Mapped[User] = relationship(User)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "channel", "target", "event_key", name="uq_push_delivery_failure_target"),
+    )
+
+
 class UserNotification(Base, TimestampMixin):
     __tablename__ = "user_notifications"
 

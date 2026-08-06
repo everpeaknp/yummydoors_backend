@@ -5,7 +5,12 @@ from datetime import UTC, datetime
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.notifications.models import FcmDeviceToken, UserNotification, WebPushSubscription
+from app.modules.notifications.models import (
+    FcmDeviceToken,
+    PushDeliveryFailure,
+    UserNotification,
+    WebPushSubscription,
+)
 from app.modules.restaurants.models import RestaurantUserAssignment
 from app.modules.workspaces.models import Workspace, WorkspaceMembership
 
@@ -300,6 +305,61 @@ class NotificationRepository:
             )
         )
         return int(result.scalar_one() or 0)
+
+    async def record_push_delivery_failure(
+        self,
+        *,
+        user_id: int,
+        channel: str,
+        target: str,
+        event_key: str | None,
+        error: str,
+    ) -> PushDeliveryFailure:
+        result = await self.session.execute(
+            select(PushDeliveryFailure).where(
+                PushDeliveryFailure.user_id == user_id,
+                PushDeliveryFailure.channel == channel,
+                PushDeliveryFailure.target == target,
+                PushDeliveryFailure.event_key == event_key,
+            )
+        )
+        record = result.scalar_one_or_none()
+        if record is None:
+            record = PushDeliveryFailure(
+                user_id=user_id,
+                channel=channel,
+                target=target,
+                event_key=event_key,
+                attempt_count=1,
+                last_error=error[:1000],
+            )
+            self.session.add(record)
+        else:
+            record.attempt_count += 1
+            record.last_error = error[:1000]
+        await self.session.flush()
+        return record
+
+    async def clear_push_delivery_failure(
+        self,
+        *,
+        user_id: int,
+        channel: str,
+        target: str,
+        event_key: str | None,
+    ) -> None:
+        result = await self.session.execute(
+            select(PushDeliveryFailure).where(
+                PushDeliveryFailure.user_id == user_id,
+                PushDeliveryFailure.channel == channel,
+                PushDeliveryFailure.target == target,
+                PushDeliveryFailure.event_key == event_key,
+            )
+        )
+        record = result.scalar_one_or_none()
+        if record is not None:
+            await self.session.delete(record)
+            await self.session.flush()
 
     async def list_merchant_user_ids_for_restaurant(self, restaurant_id: int) -> list[int]:
         workspace_result = await self.session.execute(

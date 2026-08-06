@@ -49,6 +49,7 @@ class UserSnapshot(BaseModel):
     avatar_url: str | None = None
     current_latitude: float | None = None
     current_longitude: float | None = None
+    current_location_updated_at: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -68,6 +69,7 @@ class OrderResponse(BaseModel):
     totalPrice: float
     orderNumber: str
     paymentMethod: str | None = None
+    paymentStatus: str = "unpaid"
     address: OrderAddressSnapshot | None = None
     rider: UserSnapshot | None = None
     needsCutlery: bool = True
@@ -103,6 +105,7 @@ class MerchantOrderResponse(BaseModel):
     customerName: str
     date: str
     status: OrderStatus
+    paymentStatus: str = "unpaid"
     totalPrice: float
     items: list[OrderItemResponse]
     deliveryTime: str | None = None

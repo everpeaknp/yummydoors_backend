@@ -165,18 +165,43 @@ class CatalogService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Category name is required.",
             )
+        # A category with this name may already exist in the platform's
+        # shared catalog (e.g. created by another restaurant, or curated by
+        # an admin for homepage discovery). Reuse it instead of silently
+        # creating a same-named duplicate under a "-2" slug — that used to
+        # happen because the uniqueness check ran *after* the slug had
+        # already been made unique, so it could never actually match.
+        candidate_slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "category"
+        existing = await self.repository.get_category_by_slug(candidate_slug)
+        if existing is not None:
+            await self.repository.link_category_to_restaurant(restaurant_id, existing.id)
+            await self.repository.save()
+            await self.repository.refresh(existing)
+            return existing
+
         slug = await self._build_unique_category_slug(name)
         category_data = {"name": name, "slug": slug}
         for field in ("icon_url", "web_image_url", "sort_order", "is_featured"):
             if field in data:
                 category_data[field] = data[field]
-        existing = await self.repository.get_category_by_slug(category_data["slug"])
-        if existing is not None:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="A category with this slug already exists.",
-            )
         category = await self.repository.create_category(category_data)
+        await self.repository.link_category_to_restaurant(restaurant_id, category.id)
+        await self.repository.save()
+        await self.repository.refresh(category)
+        return category
+
+    async def list_all_categories(self, user: User, restaurant_id: int):
+        """The platform-wide category catalog (not just this restaurant's
+        linked ones), so merchants can attach their menu to an existing
+        category instead of unknowingly creating a same-named duplicate."""
+        await self._require_managed_restaurant(user, restaurant_id)
+        return await self.repository.list_categories()
+
+    async def link_existing_category(self, user: User, restaurant_id: int, category_id: int):
+        await self._require_managed_restaurant(user, restaurant_id)
+        category = await self.repository.get_category_by_id(category_id)
+        if category is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found.")
         await self.repository.link_category_to_restaurant(restaurant_id, category.id)
         await self.repository.save()
         await self.repository.refresh(category)
@@ -273,7 +298,9 @@ class CatalogService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Selected category does not belong to this restaurant.",
             )
-        item = await self.repository.update_menu_item(item_id, data)
+        item = await self.repository.update_menu_item(
+            item_id, data, changed_by_user_id=user.id, source="merchant"
+        )
         if not item:
             return None
         await self.repository.save()

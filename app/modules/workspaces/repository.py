@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.modules.auth.models import Role, User, UserRole
+from app.modules.integrations.pos.models import RestaurantPosLink
 from app.modules.restaurants.models import Restaurant, RestaurantUserAssignment
 from app.modules.workspaces.models import (
     MerchantApplication,
@@ -207,6 +208,21 @@ class WorkspaceRepository:
         self.session.add(restaurant)
         await self.session.flush()
         return restaurant
+
+    async def get_restaurant_pos_link(
+        self, *, restaurant_id: int, pos_restaurant_id: str
+    ) -> RestaurantPosLink | None:
+        stmt = select(RestaurantPosLink).where(
+            RestaurantPosLink.restaurant_id == restaurant_id,
+            RestaurantPosLink.pos_restaurant_id == pos_restaurant_id,
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def create_restaurant_pos_link(self, link: RestaurantPosLink) -> RestaurantPosLink:
+        self.session.add(link)
+        await self.session.flush()
+        return link
 
     async def create_restaurant_assignment(
         self,

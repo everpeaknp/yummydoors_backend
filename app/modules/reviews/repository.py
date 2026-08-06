@@ -62,6 +62,37 @@ class ReviewRepository:
         await self.session.refresh(review)
         return review
 
+    async def list_all_reviews(
+        self,
+        *,
+        restaurant_id: int | None = None,
+        published_only: bool = False,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[RestaurantReview]:
+        stmt = (
+            select(RestaurantReview)
+            .options(selectinload(RestaurantReview.user), selectinload(RestaurantReview.restaurant))
+            .order_by(RestaurantReview.created_at.desc())
+        )
+        if restaurant_id is not None:
+            stmt = stmt.where(RestaurantReview.restaurant_id == restaurant_id)
+        if published_only:
+            stmt = stmt.where(RestaurantReview.is_published.is_(True))
+        stmt = stmt.offset(offset).limit(limit)
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def set_published(self, review: RestaurantReview, *, is_published: bool) -> RestaurantReview:
+        review.is_published = is_published
+        await self.session.commit()
+        await self.session.refresh(review)
+        return review
+
+    async def delete_review(self, review: RestaurantReview) -> None:
+        await self.session.delete(review)
+        await self.session.commit()
+
     async def count_new_reviews(self, restaurant_id: int, since_days: int = 7) -> int:
         from datetime import UTC, datetime, timedelta
         from sqlalchemy import func

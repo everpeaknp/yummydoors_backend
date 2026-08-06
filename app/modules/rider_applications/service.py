@@ -183,8 +183,11 @@ class RiderApplicationService:
             try:
                 send_user_push_task.delay(user_id=admin.id, payload=payload)
             except Exception:
-                await self.notifications.send_web_push_to_user(user_id=admin.id, payload=payload)
-                await self.notifications.send_fcm_to_user(user_id=admin.id, payload=payload)
+                try:
+                    await self.notifications.send_web_push_to_user(user_id=admin.id, payload=payload)
+                    await self.notifications.send_fcm_to_user(user_id=admin.id, payload=payload)
+                except Exception:
+                    pass
 
     async def _notify_applicant(self, application: RiderApplication, *, title: str, body: str, deep_link: str) -> None:
         payload = {
@@ -228,8 +231,11 @@ class RiderApplicationService:
         try:
             send_user_push_task.delay(user_id=application.user_id, payload=payload)
         except Exception:
-            await self.notifications.send_web_push_to_user(user_id=application.user_id, payload=payload)
-            await self.notifications.send_fcm_to_user(user_id=application.user_id, payload=payload)
+            try:
+                await self.notifications.send_web_push_to_user(user_id=application.user_id, payload=payload)
+                await self.notifications.send_fcm_to_user(user_id=application.user_id, payload=payload)
+            except Exception:
+                pass
 
     def _build_response(self, application: RiderApplication) -> RiderApplicationResponse:
         return RiderApplicationResponse(

@@ -304,3 +304,35 @@ class AdminFeaturedVideoResponse(BaseModel):
     sort_order: int
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class AdminReviewResponse(BaseModel):
+    id: int
+    restaurant_id: int
+    restaurant_name: str
+    user_id: int | None
+    reviewer_name: str
+    rating: float
+    comment: str | None = None
+    merchant_reply: str | None = None
+    is_published: bool
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AdminReviewModerationUpdate(BaseModel):
+    is_published: bool
+
+
+class AdminMenuItemRevisionResponse(BaseModel):
+    id: int
+    menu_item_id: int
+    changed_by_user_id: int | None
+    changed_by_name: str | None
+    source: str
+    previous_values: dict
+    new_values: dict
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)

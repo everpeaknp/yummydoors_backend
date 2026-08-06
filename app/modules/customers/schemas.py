@@ -20,6 +20,8 @@ class CustomerAddressBase(BaseModel):
 
 
 class CustomerAddressCreate(CustomerAddressBase):
+    latitude: float = Field(..., ge=-90, le=90)
+    longitude: float = Field(..., ge=-180, le=180)
     is_default: bool = False
 
 
@@ -35,8 +37,8 @@ class CustomerAddressUpdate(BaseModel):
     city: Optional[str] = Field(None, max_length=100)
     area: Optional[str] = Field(None, max_length=100)
     state_or_province: Optional[str] = Field(None, max_length=100)
-    latitude: Optional[float] = None
-    longitude: Optional[float] = None
+    latitude: Optional[float] = Field(None, ge=-90, le=90)
+    longitude: Optional[float] = Field(None, ge=-180, le=180)
     delivery_notes: Optional[str] = Field(None, max_length=1000)
     is_default: Optional[bool] = None
 

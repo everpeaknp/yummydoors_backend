@@ -4,7 +4,8 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.modules.catalog.models import MenuItem, MenuModifierGroup
+from app.modules.catalog.models import MenuItem, MenuItemRevision, MenuModifierGroup
+from app.modules.catalog.revisions import record_menu_item_revision
 from app.modules.merchandising.models import PromoBanner, PromoTargetType
 from app.modules.orders.models import Order, OrderItem, OrderStatus
 from app.modules.restaurants.models import Category, Restaurant, RestaurantCategory, RestaurantGalleryImage
@@ -277,14 +278,27 @@ class CatalogRepository:
         result = await self.session.execute(stmt)
         return result.scalars().first()
 
-    async def update_menu_item(self, item_id: int, data: dict) -> MenuItem | None:
+    async def update_menu_item(
+        self, item_id: int, data: dict, *, changed_by_user_id: int | None = None, source: str = "merchant"
+    ) -> MenuItem | None:
         item = await self.session.get(MenuItem, item_id)
         if not item:
             return None
+        record_menu_item_revision(self.session, item, data, changed_by_user_id=changed_by_user_id, source=source)
         for k, v in data.items():
             setattr(item, k, v)
         await self.session.flush()
         return item
+
+    async def list_menu_item_revisions(self, item_id: int) -> Sequence[MenuItemRevision]:
+        stmt = (
+            select(MenuItemRevision)
+            .options(selectinload(MenuItemRevision.changed_by))
+            .where(MenuItemRevision.menu_item_id == item_id)
+            .order_by(MenuItemRevision.created_at.desc())
+        )
+        result = await self.session.execute(stmt)
+        return result.scalars().all()
 
     async def delete_menu_item(self, item_id: int) -> bool:
         item = await self.session.get(MenuItem, item_id)

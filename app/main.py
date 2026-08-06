@@ -24,6 +24,7 @@ from app.modules.media.api import router as media_router
 from app.modules.notifications.api import router as notifications_router
 from app.modules.rider_dispatch.api import router as rider_dispatch_router
 from app.modules.rider_applications.api import router as rider_applications_router
+from app.modules.payments.api import router as payments_router
 from app.modules.realtime.bus import realtime_bus
 
 OPENAPI_TAGS = [
@@ -149,6 +150,7 @@ app.include_router(media_router, prefix=settings.api_v1_prefix)
 app.include_router(notifications_router, prefix=settings.api_v1_prefix)
 app.include_router(rider_dispatch_router, prefix=settings.api_v1_prefix)
 app.include_router(rider_applications_router, prefix=settings.api_v1_prefix)
+app.include_router(payments_router, prefix=settings.api_v1_prefix)
 
 
 @app.get("/health")

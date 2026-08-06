@@ -108,12 +108,25 @@ def test_merchant_cannot_mark_rider_assigned_order_delivered():
     order = SimpleNamespace(rider_user_id=17)
 
     with pytest.raises(HTTPException) as exc:
-        service._validate_merchant_delivery(order)
+        service._validate_merchant_delivery(order, reason=None)
 
     assert exc.value.status_code == 409
 
 
-def test_merchant_can_mark_unassigned_order_delivered():
+def test_merchant_completing_unassigned_order_requires_a_reason():
     service = OrderService(None)  # type: ignore[arg-type]
 
-    service._validate_merchant_delivery(SimpleNamespace(rider_user_id=None))
+    with pytest.raises(HTTPException) as exc:
+        service._validate_merchant_delivery(SimpleNamespace(rider_user_id=None), reason=None)
+
+    assert exc.value.status_code == 400
+
+
+def test_merchant_can_mark_unassigned_order_delivered_with_reason():
+    service = OrderService(None)  # type: ignore[arg-type]
+
+    result = service._validate_merchant_delivery(
+        SimpleNamespace(rider_user_id=None), reason="Self-delivered by restaurant staff"
+    )
+
+    assert result is True

@@ -36,6 +36,10 @@ class Order(Base, TimestampMixin):
     status: Mapped[OrderStatus] = mapped_column(SQLEnum(OrderStatus), default=OrderStatus.placed, nullable=False)
     total_price: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     payment_method: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # Denormalized summary of the order's payment state — the Payment table
+    # (app.modules.payments.models) is the source of truth; this column is
+    # kept in sync by PaymentService for fast reads without a join.
+    payment_status: Mapped[str] = mapped_column(String(20), default="unpaid", nullable=False)
     delivery_address_text: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     delivery_recipient_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     delivery_phone_number: Mapped[str | None] = mapped_column(String(32), nullable=True)
@@ -67,6 +71,29 @@ class Order(Base, TimestampMixin):
     address: Mapped["CustomerAddress | None"] = relationship(foreign_keys=[address_id])
     rider: Mapped["User | None"] = relationship(foreign_keys=[rider_user_id])
     items: Mapped[list["OrderItem"]] = relationship(back_populates="order", cascade="all, delete-orphan")
+
+
+class OrderStatusEvent(Base, TimestampMixin):
+    """Audit trail of every status transition on an order.
+
+    This exists specifically so a merchant completing an order without ever
+    assigning a rider — a deliberate escape path in the status flow — leaves
+    a permanent, attributable record instead of just silently overwriting
+    `orders.status` with no trace of who did it or why.
+    """
+
+    __tablename__ = "order_status_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), nullable=False, index=True)
+    actor_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    previous_status: Mapped[str] = mapped_column(String(20), nullable=False)
+    new_status: Mapped[str] = mapped_column(String(20), nullable=False)
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    order: Mapped["Order"] = relationship(foreign_keys=[order_id])
+    actor: Mapped["User | None"] = relationship(foreign_keys=[actor_user_id])
 
 
 class OrderItem(Base, TimestampMixin):

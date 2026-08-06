@@ -15,12 +15,14 @@ from app.modules.carts.schemas import (
     CartPricingBreakdown,
     CartResponse,
 )
+from app.modules.promotions.service import PromotionService
 from app.modules.restaurants.models import Restaurant
 
 
 class CartService:
     def __init__(self, session: AsyncSession):
         self.repo = CartRepository(session)
+        self.promotions = PromotionService(session)
 
     @staticmethod
     def _build_address_summary(cart: Cart) -> CartAddressSummary | None:
@@ -44,23 +46,6 @@ class CartService:
         )
 
     @staticmethod
-    def _resolve_coupon_discount(code: str | None, items_total: float) -> float:
-        if not code:
-            return 0.0
-
-        normalized = code.strip().upper()
-        if normalized == "WELCOME50":
-            return min(50.0, items_total)
-        if normalized == "FREEDEL":
-            return 0.0
-        if normalized == "SAVE10":
-            return round(items_total * 0.1, 2)
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid coupon code.",
-        )
-
-    @staticmethod
     def _add_on_selection_values(selection: dict) -> tuple[int, int]:
         try:
             add_on_id = int(selection["add_on_id"])
@@ -72,7 +57,7 @@ class CartService:
             ) from exc
         return add_on_id, quantity
 
-    def _recalculate_cart_totals(self, cart: Cart) -> None:
+    async def _recalculate_cart_totals(self, cart: Cart) -> None:
         items_total = 0.0
         for item in cart.items:
             if item.menu_item:
@@ -90,8 +75,19 @@ class CartService:
                     unit_price += add_ons.get(add_on_id, 0.0) * quantity
                 items_total += unit_price * item.quantity
 
-        coupon_discount = self._resolve_coupon_discount(cart.coupon_code, items_total) if cart.coupon_code else 0.0
-        delivery_fee = 0.0 if cart.coupon_code and cart.coupon_code.strip().upper() == "FREEDEL" else 100.0
+        coupon_discount = 0.0
+        free_delivery = False
+        if cart.coupon_code:
+            quote = await self.promotions.quote_discount(
+                code=cart.coupon_code,
+                restaurant_id=cart.restaurant_id,
+                customer_id=cart.customer_id,
+                items_total=items_total,
+            )
+            coupon_discount = quote.discount_amount
+            free_delivery = quote.free_delivery
+
+        delivery_fee = 0.0 if free_delivery else 100.0
         service_fee = round(items_total * 0.05, 2)
         tax_amount = round(items_total * 0.13, 2)
         subtotal_amount = items_total - coupon_discount
@@ -104,8 +100,8 @@ class CartService:
         cart.subtotal_amount = round(subtotal_amount, 2)
         cart.total_amount = total_amount
 
-    def _format_cart_response(self, cart: Cart) -> CartResponse:
-        self._recalculate_cart_totals(cart)
+    async def _format_cart_response(self, cart: Cart) -> CartResponse:
+        await self._recalculate_cart_totals(cart)
 
         items_count = 0
         formatted_items: list[CartItemResponse] = []
@@ -167,7 +163,7 @@ class CartService:
         )
 
     async def _save_and_format(self, cart: Cart) -> CartResponse:
-        self._recalculate_cart_totals(cart)
+        await self._recalculate_cart_totals(cart)
         await self.repo.update_cart_context(
             cart,
             {
@@ -182,7 +178,7 @@ class CartService:
         refreshed = await self.repo.get_active_cart(cart.customer_id, cart.restaurant_id)
         if refreshed is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cart not found")
-        return self._format_cart_response(refreshed)
+        return await self._format_cart_response(refreshed)
 
     async def get_all_active_carts(self, customer_id: int) -> list[CartResponse]:
         carts = await self.repo.get_all_active_carts(customer_id)

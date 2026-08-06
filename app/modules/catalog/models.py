@@ -3,7 +3,7 @@ from __future__ import annotations
 import enum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, Float, ForeignKey, Integer, String
+from sqlalchemy import JSON, Boolean, Float, ForeignKey, Integer, String
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -11,6 +11,7 @@ from app.db.session import Base
 from app.models.mixins import TimestampMixin
 
 if TYPE_CHECKING:
+    from app.modules.auth.models import User
     from app.modules.restaurants.models import Category, Restaurant
 
 
@@ -89,6 +90,29 @@ class MenuModifierItem(Base):
     is_available: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     group: Mapped[MenuModifierGroup] = relationship(back_populates="items")
+
+
+class MenuItemRevision(Base, TimestampMixin):
+    """Audit trail of every merchant/admin edit to a menu item's price,
+    availability, or name. Menu item updates used to be plain in-place ORM
+    mutations with no history — a merchant or admin changing a price left no
+    trace of what it used to be or who changed it."""
+
+    __tablename__ = "menu_item_revisions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    menu_item_id: Mapped[int] = mapped_column(
+        ForeignKey("menu_items.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    changed_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    source: Mapped[str] = mapped_column(String(16), nullable=False)
+    previous_values: Mapped[dict] = mapped_column(JSON, nullable=False)
+    new_values: Mapped[dict] = mapped_column(JSON, nullable=False)
+
+    menu_item: Mapped[MenuItem] = relationship()
+    changed_by: Mapped["User | None"] = relationship(foreign_keys=[changed_by_user_id])
 
 
 class MenuAddOn(Base, TimestampMixin):

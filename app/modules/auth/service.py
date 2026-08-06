@@ -477,6 +477,33 @@ class AuthService:
         await self.repo.commit()
         return {"success": True}
 
+    async def _broadcast_rider_location_to_active_orders(
+        self, user: User, latitude: float, longitude: float, updated_at: datetime
+    ) -> None:
+        active_orders = await self.repo.db.execute(
+            select(Order).where(
+                Order.rider_user_id == user.id,
+                Order.status.not_in({"delivered", "cancelled"}),
+            )
+        )
+        for order in active_orders.scalars().all():
+            event = {
+                "event": "rider_location_update",
+                "order_id": order.id,
+                "rider_user_id": user.id,
+                "latitude": latitude,
+                "longitude": longitude,
+                "updated_at": updated_at.isoformat(),
+                "restaurant_id": order.restaurant_id,
+                "customer_id": order.customer_id,
+            }
+            try:
+                await realtime_bus.publish(ORDER_CUSTOMER_CHANNEL, event)
+                await realtime_bus.publish(ORDER_MERCHANT_CHANNEL, event)
+            except Exception:
+                # GPS persistence must not fail because realtime delivery is unavailable.
+                pass
+
     async def update_rider_location(
         self,
         user: User,
@@ -491,29 +518,9 @@ class AuthService:
         user.current_longitude = payload.longitude
         user.current_location_updated_at = datetime.now(UTC)
         await self.repo.commit()
-        active_orders = await self.repo.db.execute(
-            select(Order).where(
-                Order.rider_user_id == user.id,
-                Order.status.not_in({"delivered", "cancelled"}),
-            )
+        await self._broadcast_rider_location_to_active_orders(
+            user, payload.latitude, payload.longitude, user.current_location_updated_at
         )
-        for order in active_orders.scalars().all():
-            event = {
-                "event": "rider_location_update",
-                "order_id": order.id,
-                "rider_user_id": user.id,
-                "latitude": payload.latitude,
-                "longitude": payload.longitude,
-                "updated_at": user.current_location_updated_at.isoformat(),
-                "restaurant_id": order.restaurant_id,
-                "customer_id": order.customer_id,
-            }
-            try:
-                await realtime_bus.publish(ORDER_CUSTOMER_CHANNEL, event)
-                await realtime_bus.publish(ORDER_MERCHANT_CHANNEL, event)
-            except Exception:
-                # GPS persistence must not fail because realtime delivery is unavailable.
-                pass
         return await self._build_user_summary(user)
 
     async def update_user_location(
@@ -525,6 +532,15 @@ class AuthService:
         user.current_longitude = payload.longitude
         user.current_location_updated_at = datetime.now(UTC)
         await self.repo.commit()
+        # This endpoint isn't rider-specific, but if the caller happens to be
+        # an active rider on a delivery, their tracked customer/merchant
+        # views must still get the update — otherwise using this endpoint
+        # instead of /me/rider-location would silently freeze their map.
+        role_codes = {item.role.code for item in user.roles}
+        if "rider" in role_codes:
+            await self._broadcast_rider_location_to_active_orders(
+                user, payload.latitude, payload.longitude, user.current_location_updated_at
+            )
         return await self._build_user_summary(user)
 
     async def update_rider_work_mode(

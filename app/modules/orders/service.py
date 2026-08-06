@@ -11,7 +11,7 @@ from app.modules.carts.models import Cart, CartItem, CartStatus
 from app.modules.carts.repository import CartRepository
 from app.modules.catalog.models import MenuItem, MenuModifierGroup
 from app.modules.customers.models import CustomerAddress
-from app.modules.orders.models import Order, OrderStatus
+from app.modules.orders.models import Order, OrderStatus, OrderStatusEvent
 from app.modules.orders.repository import OrderRepository
 from app.modules.orders.schemas import (
     CheckoutRequest,
@@ -27,6 +27,18 @@ from app.modules.orders.schemas import (
     UserSnapshot,
 )
 from app.modules.rider_dispatch.service import RiderDispatchService
+
+
+# Explicit, enforced state machine for merchant-driven status changes.
+# `toPay` and `placed` are effectively the same "not yet being cooked" stage
+# for this purpose; delivered/cancelled are terminal.
+_ALLOWED_MERCHANT_TRANSITIONS: dict[OrderStatus, set[OrderStatus]] = {
+    OrderStatus.toPay: {OrderStatus.placed, OrderStatus.preparing, OrderStatus.cancelled},
+    OrderStatus.placed: {OrderStatus.preparing, OrderStatus.cancelled},
+    OrderStatus.preparing: {OrderStatus.delivered, OrderStatus.cancelled},
+    OrderStatus.delivered: set(),
+    OrderStatus.cancelled: set(),
+}
 
 
 class OrderService:
@@ -142,6 +154,7 @@ class OrderService:
             avatar_url=user.avatar_url,
             current_latitude=user.current_latitude,
             current_longitude=user.current_longitude,
+            current_location_updated_at=user.current_location_updated_at,
         )
 
     def _format_order_response(self, order: Order) -> OrderResponse:
@@ -201,6 +214,7 @@ class OrderService:
             totalPrice=order.total_price,
             orderNumber=order.order_number,
             paymentMethod=order.payment_method,
+            paymentStatus=order.payment_status,
             address=address,
             rider=self._snapshot_user(order.rider),
             needsCutlery=order.needs_cutlery,
@@ -273,6 +287,7 @@ class OrderService:
             customerName=order.customer.full_name if order.customer else "Unknown",
             date=order.created_at.strftime("%d/%m/%Y"),
             status=order.status,
+            paymentStatus=order.payment_status,
             totalPrice=order.total_price,
             items=items,
             deliveryTime=order.estimated_delivery_window or "20-30 min",
@@ -362,7 +377,7 @@ class OrderService:
         from app.modules.carts.service import CartService
 
         cart_service = CartService(self.session)
-        cart_service._recalculate_cart_totals(cart)
+        await cart_service._recalculate_cart_totals(cart)
         await self.cart_repo.update_cart_context(
             cart,
             {
@@ -396,6 +411,25 @@ class OrderService:
                 .where(MenuItem.id == menu_item_id)
                 .values(popularity_score=MenuItem.popularity_score + qty)
             )
+
+        if cart.coupon_code and cart.coupon_discount:
+            from app.modules.promotions.service import PromotionService
+
+            try:
+                await PromotionService(self.session).redeem(
+                    code=cart.coupon_code,
+                    customer_id=customer_id,
+                    order_id=order.id,
+                    discount_amount=cart.coupon_discount,
+                )
+            except HTTPException:
+                # The order is already placed and priced with the discount
+                # already applied — a coupon usage-limit race lost here just
+                # means this redemption isn't counted against the limit, not
+                # that the order itself should fail.
+                logging.getLogger("yummy.order").warning(
+                    "coupon redemption bookkeeping failed for order %s (code=%s)", order.id, cart.coupon_code
+                )
 
         order = await self.repo.get_order_by_id(order.id, customer_id)
         if order is None:
@@ -491,16 +525,21 @@ class OrderService:
                     OrderItemResponse(name=item_name, price=item_price, quantity=req_item.quantity)
                 )
 
-        normalized_coupon = payload.coupon_code.strip().upper() if payload.coupon_code else None
         coupon_discount = 0.0
-        if normalized_coupon == "WELCOME50":
-            coupon_discount = min(50.0, items_total)
-        elif normalized_coupon == "SAVE10":
-            coupon_discount = round(items_total * 0.1, 2)
-        elif normalized_coupon not in {None, "FREEDEL"}:
-            raise HTTPException(status_code=400, detail="Invalid coupon code.")
+        free_delivery = False
+        if payload.coupon_code:
+            from app.modules.promotions.service import PromotionService
 
-        delivery_fee = 0.0 if normalized_coupon == "FREEDEL" else (100.0 if items_total > 0 else 0.0)
+            quote = await PromotionService(self.session).quote_discount(
+                code=payload.coupon_code,
+                restaurant_id=payload.restaurant_id,
+                customer_id=None,
+                items_total=items_total,
+            )
+            coupon_discount = quote.discount_amount
+            free_delivery = quote.free_delivery
+
+        delivery_fee = 0.0 if free_delivery else (100.0 if items_total > 0 else 0.0)
         service_fee = round(items_total * 0.05, 2)
         tax_amount = round(items_total * 0.13, 2)
         subtotal = round(items_total - coupon_discount, 2)
@@ -582,7 +621,13 @@ class OrderService:
             for item in candidates
         ]
 
-    async def update_merchant_order_status(self, merchant_user_id: int, order_id: int, new_status: OrderStatus) -> MerchantOrderResponse:
+    async def update_merchant_order_status(
+        self,
+        merchant_user_id: int,
+        order_id: int,
+        new_status: OrderStatus,
+        reason: str | None = None,
+    ) -> MerchantOrderResponse:
         restaurant_id = await self._get_active_merchant_restaurant_id(merchant_user_id)
         if not restaurant_id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No active restaurant context.")
@@ -590,17 +635,26 @@ class OrderService:
         order = await self.repo.get_by_id(order_id)
         if not order:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found.")
-            
+
         if order.restaurant_id != restaurant_id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to modify this order.")
 
         previous_status = order.status
+        allowed_next = _ALLOWED_MERCHANT_TRANSITIONS.get(previous_status, set())
+        if new_status != previous_status and new_status not in allowed_next:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Cannot move an order from {previous_status.value} to {new_status.value}.",
+            )
+
+        completed_without_rider = False
         if new_status == OrderStatus.delivered:
-            self._validate_merchant_delivery(order)
+            completed_without_rider = self._validate_merchant_delivery(order, reason=reason)
+
         # Update order status
         order.status = new_status
         now = datetime.now(UTC)
-        
+
         if new_status == OrderStatus.preparing:
             order.preparing_at = now
             dispatch_service = RiderDispatchService(self.session)
@@ -620,6 +674,21 @@ class OrderService:
                     "Failed to update customer loyalty for order %s", order.id
                 )
 
+        if new_status != previous_status:
+            note = reason
+            if completed_without_rider and not note:
+                note = "Marked delivered by merchant without an assigned rider."
+            self.session.add(
+                OrderStatusEvent(
+                    order_id=order.id,
+                    actor_user_id=merchant_user_id,
+                    previous_status=previous_status.value,
+                    new_status=new_status.value,
+                    source="merchant",
+                    note=note,
+                )
+            )
+
         await self.session.commit()
         await self.session.refresh(order)
         order = await self.repo.get_by_id(order_id)
@@ -628,12 +697,27 @@ class OrderService:
         return self._format_merchant_order_response(order)
 
     @staticmethod
-    def _validate_merchant_delivery(order: Order) -> None:
+    def _validate_merchant_delivery(order: Order, *, reason: str | None) -> bool:
+        """Returns True if this is a merchant completing the order without
+        ever assigning a rider — a deliberate escape path (e.g. the merchant
+        delivered it themselves, or delivery wasn't needed). This path
+        requires an explicit reason so it's auditable, not a silent status
+        flip.
+        """
         if order.rider_user_id is not None:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Assigned riders must mark orders as delivered.",
             )
+        if not reason or not reason.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "A reason is required to complete an order without an assigned rider "
+                    "(e.g. self-delivery, pickup, or delivery not needed)."
+                ),
+            )
+        return True
 
     async def assign_rider_to_order(
         self,
@@ -721,13 +805,30 @@ class OrderService:
             )
 
         now = datetime.now(UTC)
-        order.rider_user_id = rider_user_id
-        order.rider_assigned_at = order.rider_assigned_at or now
-        if order.status == OrderStatus.placed:
-            order.status = OrderStatus.preparing
-            order.preparing_at = order.preparing_at or now
+        next_status = OrderStatus.preparing if order.status == OrderStatus.placed else order.status
+        # Conditional UPDATE (compare-and-swap on rider_user_id IS NULL)
+        # instead of a plain ORM attribute mutation + commit: two riders
+        # calling this concurrently for the same open order must not both
+        # succeed. PostgreSQL serializes concurrent UPDATEs on the same row,
+        # so whichever commits first wins and the second sees rowcount == 0.
+        claimed = await self.session.execute(
+            update(Order)
+            .where(Order.id == order_id, Order.rider_user_id.is_(None))
+            .values(
+                rider_user_id=rider_user_id,
+                rider_assigned_at=order.rider_assigned_at or now,
+                status=next_status,
+                preparing_at=order.preparing_at or (now if next_status == OrderStatus.preparing else None),
+                rider_assignment_state="assigned",
+            )
+        )
+        if claimed.rowcount != 1:
+            await self.session.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This order has already been claimed by another rider.",
+            )
         await self.session.commit()
-        await self.session.refresh(order)
         order = await self.repo.get_by_id(order_id)
         if order is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found.")

@@ -49,6 +49,10 @@ class MerchantCategoryUpdate(BaseModel):
     sort_order: int | None = None
 
 
+class MerchantCategoryLinkRequest(BaseModel):
+    category_id: int
+
+
 class RestaurantCardSummary(BaseModel):
     id: int
     slug: str

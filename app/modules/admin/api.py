@@ -9,6 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.db.session import get_db
+from app.modules.admin.dashboard_service import AdminDashboardSummary, build_dashboard_summary
+from app.modules.catalog.revisions import record_menu_item_revision
+from app.modules.reviews.repository import ReviewRepository
 from app.modules.admin.schemas import (
     AdminCategoryCreate,
     AdminCategoryResponse,
@@ -28,7 +31,10 @@ from app.modules.admin.schemas import (
     AdminRestaurantCreate,
     AdminRestaurantResponse,
     AdminRestaurantUpdate,
+    AdminMenuItemRevisionResponse,
     AdminOperatorResponse,
+    AdminReviewModerationUpdate,
+    AdminReviewResponse,
     AdminUserStatusUpdate,
     AdminWorkspaceStatusResponse,
     AdminWorkspaceStatusUpdate,
@@ -37,6 +43,7 @@ from app.modules.auth.deps import require_role
 from app.modules.auth.models import Role, User, UserRole, UserStatus
 from app.modules.workspaces.models import Workspace
 from app.modules.catalog.models import MenuAddOn, MenuItem, MenuModifierGroup, MenuModifierItem
+from app.modules.catalog.repository import CatalogRepository
 from app.modules.merchandising.models import PromoBanner
 from app.modules.merchandising.service import MerchandisingService
 from app.modules.reservations.models import ReservationStatus
@@ -53,6 +60,16 @@ from app.schemas.common import ApiResponse
 from app.services.cloudinary_service import CloudinaryService
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
+
+
+@router.get(
+    "/dashboard/summary",
+    response_model=ApiResponse[AdminDashboardSummary],
+    dependencies=[Depends(require_role(["super_admin", "ops_admin"]))],
+)
+async def get_admin_dashboard_summary(db: AsyncSession = Depends(get_db)):
+    summary = await build_dashboard_summary(db)
+    return ApiResponse(message="Admin dashboard summary fetched successfully.", data=summary)
 
 
 @router.get(
@@ -464,15 +481,17 @@ async def create_menu_item(payload: AdminMenuItemCreate, db: AsyncSession = Depe
 @router.put(
     "/menu-items/{menu_item_id}",
     response_model=ApiResponse[AdminMenuItemResponse],
-    dependencies=[Depends(require_role(["super_admin"]))],
 )
 async def update_menu_item(
     menu_item_id: int,
     payload: AdminMenuItemUpdate,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(["super_admin"])),
 ):
     menu_item = await _get_menu_item_or_404(db, menu_item_id)
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    changes = payload.model_dump(exclude_unset=True)
+    record_menu_item_revision(db, menu_item, changes, changed_by_user_id=current_user.id, source="admin")
+    for field, value in changes.items():
         setattr(menu_item, field, value)
     await db.commit()
     await db.refresh(menu_item)
@@ -480,6 +499,31 @@ async def update_menu_item(
         message="Admin menu item updated successfully.",
         data=AdminMenuItemResponse.model_validate(menu_item),
     )
+
+
+@router.get(
+    "/menu-items/{menu_item_id}/revisions",
+    response_model=ApiResponse[list[AdminMenuItemRevisionResponse]],
+    dependencies=[Depends(require_role(["super_admin", "ops_admin"]))],
+)
+async def list_menu_item_revisions(menu_item_id: int, db: AsyncSession = Depends(get_db)):
+    await _get_menu_item_or_404(db, menu_item_id)
+    repo = CatalogRepository(db)
+    revisions = await repo.list_menu_item_revisions(menu_item_id)
+    data = [
+        AdminMenuItemRevisionResponse(
+            id=r.id,
+            menu_item_id=r.menu_item_id,
+            changed_by_user_id=r.changed_by_user_id,
+            changed_by_name=r.changed_by.full_name if r.changed_by else None,
+            source=r.source,
+            previous_values=r.previous_values,
+            new_values=r.new_values,
+            created_at=r.created_at,
+        )
+        for r in revisions
+    ]
+    return ApiResponse(message="Menu item revisions fetched.", data=data)
 
 
 @router.delete(
@@ -805,3 +849,78 @@ async def delete_featured_video(
             status_code=status.HTTP_404_NOT_FOUND, detail="Featured video not found."
         )
     return ApiResponse(message="Featured video deleted.", data=None)
+
+
+def _format_admin_review(review) -> AdminReviewResponse:
+    return AdminReviewResponse(
+        id=review.id,
+        restaurant_id=review.restaurant_id,
+        restaurant_name=review.restaurant.name if review.restaurant else "Unknown restaurant",
+        user_id=review.user_id,
+        reviewer_name=review.user.full_name if review.user else review.author_name,
+        rating=review.rating,
+        comment=review.comment,
+        merchant_reply=review.merchant_reply,
+        is_published=review.is_published,
+        created_at=review.created_at,
+    )
+
+
+@router.get(
+    "/reviews",
+    response_model=ApiResponse[list[AdminReviewResponse]],
+    summary="List reviews across all restaurants for moderation",
+    dependencies=[Depends(require_role(["super_admin", "ops_admin"]))],
+)
+async def list_admin_reviews(
+    restaurant_id: int | None = Query(default=None),
+    published_only: bool = Query(default=False),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_db),
+):
+    repo = ReviewRepository(db)
+    reviews = await repo.list_all_reviews(
+        restaurant_id=restaurant_id, published_only=published_only, limit=limit, offset=offset
+    )
+    return ApiResponse(message="Reviews fetched.", data=[_format_admin_review(r) for r in reviews])
+
+
+@router.patch(
+    "/reviews/{review_id}/moderation",
+    response_model=ApiResponse[AdminReviewResponse],
+    summary="Publish or hide a review",
+    dependencies=[Depends(require_role(["super_admin", "ops_admin"]))],
+)
+async def moderate_admin_review(
+    review_id: int,
+    payload: AdminReviewModerationUpdate,
+    db: AsyncSession = Depends(get_db),
+):
+    repo = ReviewRepository(db)
+    review = await repo.get_by_id(review_id)
+    if review is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Review not found.")
+    updated = await repo.set_published(review, is_published=payload.is_published)
+    return ApiResponse(
+        message="Review published." if payload.is_published else "Review hidden.",
+        data=_format_admin_review(updated),
+    )
+
+
+@router.delete(
+    "/reviews/{review_id}",
+    response_model=ApiResponse,
+    summary="Permanently delete a review",
+    dependencies=[Depends(require_role(["super_admin", "ops_admin"]))],
+)
+async def delete_admin_review(
+    review_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    repo = ReviewRepository(db)
+    review = await repo.get_by_id(review_id)
+    if review is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Review not found.")
+    await repo.delete_review(review)
+    return ApiResponse(message="Review deleted.", data=None)

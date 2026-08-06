@@ -64,6 +64,21 @@ class Settings(BaseSettings):
 
     cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
 
+    # eSewa merchant credentials, held server-side only. Never send esewa_secret_key
+    # to any client — it must only ever be used for the server-to-server verify call.
+    esewa_client_id: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("ESEWA_CLIENT_ID", "YUMMYDOORS_ESEWA_CLIENT_ID"),
+    )
+    esewa_secret_key: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("ESEWA_SECRET_KEY", "YUMMYDOORS_ESEWA_SECRET_KEY"),
+    )
+    esewa_environment: str = Field(
+        default="test",
+        validation_alias=AliasChoices("ESEWA_ENVIRONMENT", "YUMMYDOORS_ESEWA_ENVIRONMENT"),
+    )
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_prefix="YUMMYDOORS_",

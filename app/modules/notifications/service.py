@@ -18,6 +18,15 @@ from app.modules.notifications.schemas import FcmTokenCreate, WebPushSubscriptio
 logger = logging.getLogger(__name__)
 
 
+class PushDeliveryPartialFailure(Exception):
+    """Raised when at least one push target failed transiently.
+
+    Letting this propagate (instead of swallowing it) is what makes the
+    `autoretry_for=(Exception,)` already configured on the Celery push tasks
+    in app/tasks/notifications.py actually retry the delivery.
+    """
+
+
 class NotificationService:
     def __init__(self, session: AsyncSession):
         self.session = session
@@ -253,8 +262,18 @@ class NotificationService:
         if not subscriptions:
             return
 
+        failures = 0
         for subscription in subscriptions:
-            await self._deliver_subscription(subscription.endpoint, subscription.p256dh, subscription.auth, payload)
+            delivered = await self._deliver_subscription(
+                user_id, subscription.endpoint, subscription.p256dh, subscription.auth, payload
+            )
+            if not delivered:
+                failures += 1
+
+        if failures:
+            raise PushDeliveryPartialFailure(
+                f"web push failed for {failures}/{len(subscriptions)} subscription(s) of user {user_id}"
+            )
 
     async def send_web_push_to_merchants(self, *, restaurant_id: int, payload: dict[str, Any]) -> None:
         if not self._is_web_push_configured():
@@ -264,13 +283,26 @@ class NotificationService:
         if not merchant_user_ids:
             logger.warning('Web push: no merchant users found for restaurant %s', restaurant_id)
             return
+
+        failures = 0
+        attempted = 0
         for user_id in merchant_user_ids:
             subscriptions = await self.repo.list_active_subscriptions_for_user(user_id)
             if not subscriptions:
                 logger.warning('Web push: merchant user %s has no active subscriptions', user_id)
                 continue
             for subscription in subscriptions:
-                await self._deliver_subscription(subscription.endpoint, subscription.p256dh, subscription.auth, payload)
+                attempted += 1
+                delivered = await self._deliver_subscription(
+                    user_id, subscription.endpoint, subscription.p256dh, subscription.auth, payload
+                )
+                if not delivered:
+                    failures += 1
+
+        if failures:
+            raise PushDeliveryPartialFailure(
+                f"web push failed for {failures}/{attempted} merchant subscription(s) of restaurant {restaurant_id}"
+            )
 
     async def send_fcm_to_user(self, *, user_id: int, payload: dict[str, Any]) -> None:
         if not FirebaseCloudMessagingClient.is_configured():
@@ -281,6 +313,8 @@ class NotificationService:
         if not tokens:
             return
 
+        event_key = str(payload.get("event_id") or payload.get("event") or "")
+        failures = 0
         for record in tokens:
             try:
                 await asyncio.to_thread(
@@ -288,6 +322,10 @@ class NotificationService:
                     token=record.token,
                     payload=payload,
                 )
+                await self.repo.clear_push_delivery_failure(
+                    user_id=user_id, channel="fcm", target=record.token, event_key=event_key
+                )
+                await self.session.commit()
             except FcmPushError as exc:
                 logger.warning(
                     "fcm push failed token=%s status=%s error=%s",
@@ -298,8 +336,28 @@ class NotificationService:
                 if exc.token_invalid:
                     await self.repo.deactivate_fcm_token(record.token)
                     await self.session.commit()
+                else:
+                    await self.repo.record_push_delivery_failure(
+                        user_id=user_id,
+                        channel="fcm",
+                        target=record.token,
+                        event_key=event_key,
+                        error=str(exc),
+                    )
+                    await self.session.commit()
+                    failures += 1
             except Exception as exc:
                 logger.exception("unexpected fcm push failure token=%s error=%s", record.token, exc)
+                await self.repo.record_push_delivery_failure(
+                    user_id=user_id, channel="fcm", target=record.token, event_key=event_key, error=str(exc)
+                )
+                await self.session.commit()
+                failures += 1
+
+        if failures:
+            raise PushDeliveryPartialFailure(
+                f"fcm push failed for {failures}/{len(tokens)} token(s) of user {user_id}"
+            )
 
     async def send_fcm_to_merchants(self, *, restaurant_id: int, payload: dict[str, Any]) -> None:
         if not FirebaseCloudMessagingClient.is_configured():
@@ -311,16 +369,25 @@ class NotificationService:
             logger.warning("FCM: no merchant users found for restaurant %s", restaurant_id)
             return
 
+        failures: list[str] = []
         for user_id in merchant_user_ids:
-            await self.send_fcm_to_user(user_id=user_id, payload=payload)
+            try:
+                await self.send_fcm_to_user(user_id=user_id, payload=payload)
+            except PushDeliveryPartialFailure as exc:
+                failures.append(str(exc))
+
+        if failures:
+            raise PushDeliveryPartialFailure("; ".join(failures))
 
     async def _deliver_subscription(
         self,
+        user_id: int,
         endpoint: str,
         p256dh: str,
         auth: str,
         payload: dict[str, Any],
-    ) -> None:
+    ) -> bool:
+        """Returns True on success/permanent-skip, False on transient failure."""
         subscription_info = {
             "endpoint": endpoint,
             "keys": {
@@ -328,6 +395,7 @@ class NotificationService:
                 "auth": auth,
             },
         }
+        event_key = str(payload.get("event_id") or payload.get("event") or "")
 
         try:
             await asyncio.to_thread(
@@ -337,6 +405,11 @@ class NotificationService:
                 vapid_private_key=settings.web_push_vapid_private_key,
                 vapid_claims={"sub": settings.web_push_subject},
             )
+            await self.repo.clear_push_delivery_failure(
+                user_id=user_id, channel="webpush", target=endpoint, event_key=event_key
+            )
+            await self.session.commit()
+            return True
         except WebPushException as exc:
             status_code = getattr(getattr(exc, "response", None), "status_code", None)
             logger.warning("web push failed endpoint=%s status=%s error=%s", endpoint, status_code, exc)
@@ -344,8 +417,19 @@ class NotificationService:
             if status_code in {404, 410} or "VAPID credentials" in error_text:
                 await self.repo.deactivate_subscription(endpoint)
                 await self.session.commit()
+                return True
+            await self.repo.record_push_delivery_failure(
+                user_id=user_id, channel="webpush", target=endpoint, event_key=event_key, error=error_text
+            )
+            await self.session.commit()
+            return False
         except Exception as exc:
             logger.exception("unexpected web push failure endpoint=%s error=%s", endpoint, exc)
+            await self.repo.record_push_delivery_failure(
+                user_id=user_id, channel="webpush", target=endpoint, event_key=event_key, error=str(exc)
+            )
+            await self.session.commit()
+            return False
 
     @staticmethod
     def build_order_notification_payload(

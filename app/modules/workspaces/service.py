@@ -6,6 +6,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.auth.models import User
+from app.modules.integrations.pos.models import RestaurantPosLink
 from app.modules.restaurants.models import Restaurant, RestaurantUserAssignment
 from app.modules.workspaces.models import (
     MerchantApplication,
@@ -373,6 +374,21 @@ class WorkspaceService:
                         role_id=owner_role.id,
                         restaurant_id=request.restaurant_id,
                         branch_id=None,
+                    )
+
+            if request.request_type == "pos_link" and request.pos_restaurant_id and request.restaurant_id is not None:
+                existing_pos_link = await self.repository.get_restaurant_pos_link(
+                    restaurant_id=request.restaurant_id,
+                    pos_restaurant_id=request.pos_restaurant_id,
+                )
+                if existing_pos_link is None:
+                    await self.repository.create_restaurant_pos_link(
+                        RestaurantPosLink(
+                            restaurant_id=request.restaurant_id,
+                            pos_restaurant_id=request.pos_restaurant_id,
+                            sync_mode="partner",
+                            is_active=True,
+                        )
                     )
 
         application.status = "approved"

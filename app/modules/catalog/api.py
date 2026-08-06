@@ -27,6 +27,7 @@ from app.modules.merchandising.schemas import MerchantPromoCreate, MerchantPromo
 from app.modules.restaurants.schemas import (
     CategoryCreate,
     MerchantCategoryCreate,
+    MerchantCategoryLinkRequest,
     MerchantCategoryUpdate,
     CategorySummary,
     CategoryUpdate,
@@ -155,6 +156,38 @@ async def list_restaurant_categories_api(
     categories = await service.list_categories(current_user, restaurant_id)
     data = [CategorySummary.model_validate(c) for c in categories]
     return ApiResponse(message="Categories fetched successfully.", data=data)
+
+
+@router.get(
+    "/merchant/restaurants/{restaurant_id}/categories/catalog",
+    response_model=ApiResponse[List[CategorySummary]],
+    summary="List the full platform category catalog, not just this restaurant's linked categories",
+)
+async def list_category_catalog_api(
+    restaurant_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    service = CatalogService(db)
+    categories = await service.list_all_categories(current_user, restaurant_id)
+    data = [CategorySummary.model_validate(c) for c in categories]
+    return ApiResponse(message="Category catalog fetched successfully.", data=data)
+
+
+@router.post(
+    "/merchant/restaurants/{restaurant_id}/categories/link",
+    response_model=ApiResponse[CategorySummary],
+    summary="Attach an existing platform category to this restaurant",
+)
+async def link_category_api(
+    restaurant_id: int,
+    payload: MerchantCategoryLinkRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    service = CatalogService(db)
+    category = await service.link_existing_category(current_user, restaurant_id, payload.category_id)
+    return ApiResponse(message="Category linked successfully.", data=CategorySummary.model_validate(category))
 
 
 @router.get("/merchant/restaurants/{restaurant_id}/menu-items", response_model=ApiResponse[List[MenuItemResponse]])
