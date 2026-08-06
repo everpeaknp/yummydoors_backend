@@ -9,6 +9,7 @@ Create Date: 2026-08-05 22:40:00.000000
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
 revision = "f3a4b5c6d7e8"
@@ -16,14 +17,12 @@ down_revision = "e2f3a4b5c6d7"
 branch_labels = None
 depends_on = None
 
-promotion_discount_type = sa.Enum(
-    "percentage", "fixed", "free_delivery", name="promotiondiscounttype"
-)
-# Created explicitly (checkfirst=True, idempotent) below. create_type=False
-# stops SQLAlchemy from *also* trying to CREATE TYPE as a side effect of the
-# column definition in create_table() — without this, the table creation
-# fails with "type already exists" right after the explicit create succeeds.
-promotion_discount_type_column = sa.Enum(
+# NOTE: generic sa.Enum silently ignores create_type (it's a
+# postgresql-dialect-specific flag only postgresql.ENUM honors). Using
+# sa.Enum(create_type=False) here previously still let create_table()
+# re-issue CREATE TYPE and crash with DuplicateObject. postgresql.ENUM
+# with create_type=False is what actually suppresses that.
+promotion_discount_type = postgresql.ENUM(
     "percentage", "fixed", "free_delivery", name="promotiondiscounttype", create_type=False
 )
 
@@ -35,7 +34,7 @@ def upgrade() -> None:
         "promotions",
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column("code", sa.String(length=64), nullable=False),
-        sa.Column("discount_type", promotion_discount_type_column, nullable=False),
+        sa.Column("discount_type", promotion_discount_type, nullable=False),
         sa.Column("discount_value", sa.Float(), nullable=False),
         sa.Column("max_discount_amount", sa.Float(), nullable=True),
         sa.Column("min_order_amount", sa.Float(), nullable=False),
@@ -73,7 +72,7 @@ def upgrade() -> None:
     promotions_table = sa.table(
         "promotions",
         sa.column("code", sa.String),
-        sa.column("discount_type", promotion_discount_type_column),
+        sa.column("discount_type", promotion_discount_type),
         sa.column("discount_value", sa.Float),
         sa.column("max_discount_amount", sa.Float),
         sa.column("min_order_amount", sa.Float),
