@@ -218,6 +218,40 @@ async def get_order_details(
     service = OrderService(db)
     return await service.get_order(current_user.id, order_id)
 
+@router.post("/{order_id}/cancel", response_model=OrderResponse)
+async def cancel_order(
+    order_id: int,
+    reason: str | None = None,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    service = OrderService(db)
+    updated = await service.cancel_order(current_user.id, order_id, reason=reason)
+
+    customer_payload = build_customer_order_event(updated, status_value="cancelled")
+    merchant_payload = build_merchant_order_event(
+        order_id=updated.id,
+        order_number=updated.orderNumber,
+        restaurant_id=updated.restaurantId,
+        restaurant_name=updated.restaurantName,
+        customer_name=current_user.full_name or current_user.email or "A customer",
+        status_value="cancelled",
+        event_name="order_update",
+    )
+    try:
+        await realtime_bus.publish(ORDER_MERCHANT_CHANNEL, _with_restaurant_scope(merchant_payload, updated.restaurantId))
+        await realtime_bus.publish(ORDER_CUSTOMER_CHANNEL, _with_customer_scope(customer_payload, current_user.id))
+    except Exception:
+        logger.exception("failed to publish customer cancellation websocket event")
+
+    await safe_send_order_notifications(
+        db=db,
+        merchant_restaurant_id=updated.restaurantId,
+        merchant_payload=merchant_payload,
+    )
+    return updated
+
+
 @router.post("/checkout/{cart_id}", response_model=OrderResponse, status_code=status.HTTP_201_CREATED)
 async def checkout_cart(
     cart_id: int,

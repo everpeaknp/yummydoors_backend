@@ -40,6 +40,12 @@ _ALLOWED_MERCHANT_TRANSITIONS: dict[OrderStatus, set[OrderStatus]] = {
     OrderStatus.cancelled: set(),
 }
 
+# Customers may self-serve cancel only before the restaurant has started
+# preparing the order — matches Uber Eats' policy (free cancellation only
+# up until the merchant accepts). Once preparing/delivered/already
+# cancelled, cancellation must go through the restaurant/support instead.
+_CUSTOMER_CANCELLABLE_STATUSES: set[OrderStatus] = {OrderStatus.toPay, OrderStatus.placed}
+
 
 class OrderService:
     def __init__(self, session: AsyncSession):
@@ -443,6 +449,64 @@ class OrderService:
     async def get_order(self, customer_id: int, order_id: int) -> OrderResponse:
         order = await self.repo.get_order_by_id(order_id, customer_id)
         if not order:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
+        return self._format_order_response(order)
+
+    async def cancel_order(
+        self, customer_id: int, order_id: int, reason: str | None = None
+    ) -> OrderResponse:
+        order = await self.repo.get_order_by_id(order_id, customer_id)
+        if not order:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
+        if order.status not in _CUSTOMER_CANCELLABLE_STATUSES:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "This order can no longer be cancelled from the app — the restaurant "
+                    "has already started preparing it. Please contact the restaurant or "
+                    "support for help."
+                ),
+            )
+
+        previous_status = order.status
+        now = datetime.now(UTC)
+        # Conditional UPDATE (compare-and-swap on the still-cancellable
+        # statuses) instead of a plain ORM mutation + commit: the merchant
+        # could be moving this order to "preparing" at the same instant, and
+        # whichever write commits first must win.
+        result = await self.session.execute(
+            update(Order)
+            .where(
+                Order.id == order_id,
+                Order.customer_id == customer_id,
+                Order.status.in_(_CUSTOMER_CANCELLABLE_STATUSES),
+            )
+            .values(status=OrderStatus.cancelled, cancelled_at=now, rider_offer_expires_at=None)
+        )
+        if result.rowcount != 1:
+            await self.session.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "This order can no longer be cancelled from the app — the restaurant "
+                    "has already started preparing it. Please contact the restaurant or "
+                    "support for help."
+                ),
+            )
+
+        self.session.add(
+            OrderStatusEvent(
+                order_id=order.id,
+                actor_user_id=customer_id,
+                previous_status=previous_status.value,
+                new_status=OrderStatus.cancelled.value,
+                source="customer",
+                note=reason,
+            )
+        )
+        await self.session.commit()
+        order = await self.repo.get_order_by_id(order_id, customer_id)
+        if order is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
         return self._format_order_response(order)
 
