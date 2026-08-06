@@ -19,6 +19,13 @@ depends_on = None
 promotion_discount_type = sa.Enum(
     "percentage", "fixed", "free_delivery", name="promotiondiscounttype"
 )
+# Created explicitly (checkfirst=True, idempotent) below. create_type=False
+# stops SQLAlchemy from *also* trying to CREATE TYPE as a side effect of the
+# column definition in create_table() — without this, the table creation
+# fails with "type already exists" right after the explicit create succeeds.
+promotion_discount_type_column = sa.Enum(
+    "percentage", "fixed", "free_delivery", name="promotiondiscounttype", create_type=False
+)
 
 
 def upgrade() -> None:
@@ -28,7 +35,7 @@ def upgrade() -> None:
         "promotions",
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column("code", sa.String(length=64), nullable=False),
-        sa.Column("discount_type", promotion_discount_type, nullable=False),
+        sa.Column("discount_type", promotion_discount_type_column, nullable=False),
         sa.Column("discount_value", sa.Float(), nullable=False),
         sa.Column("max_discount_amount", sa.Float(), nullable=True),
         sa.Column("min_order_amount", sa.Float(), nullable=False),
@@ -66,7 +73,7 @@ def upgrade() -> None:
     promotions_table = sa.table(
         "promotions",
         sa.column("code", sa.String),
-        sa.column("discount_type", promotion_discount_type),
+        sa.column("discount_type", promotion_discount_type_column),
         sa.column("discount_value", sa.Float),
         sa.column("max_discount_amount", sa.Float),
         sa.column("min_order_amount", sa.Float),
