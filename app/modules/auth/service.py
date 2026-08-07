@@ -698,6 +698,7 @@ class AuthService:
     async def _ensure_user_workspace(self, user: User) -> None:
         workspace_service = WorkspaceService(self.repo.db)
         await workspace_service.ensure_customer_workspace(user)
+        await workspace_service.ensure_rider_workspace_if_eligible(user)
 
     async def _authenticate_login_user(
         self,

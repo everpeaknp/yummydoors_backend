@@ -11,6 +11,8 @@ from app.modules.notifications.service import NotificationService
 from app.modules.rider_applications.models import RiderApplication
 from app.modules.rider_applications.repository import RiderApplicationRepository
 from app.modules.rider_applications.schemas import RiderApplicationCreateRequest, RiderApplicationResponse
+from app.modules.workspaces.repository import WorkspaceRepository
+from app.modules.workspaces.service import WorkspaceService
 from app.tasks.notifications import send_email_task, send_user_push_task
 
 
@@ -82,6 +84,35 @@ class RiderApplicationService:
             await self.repository.add_user_role(user_id=application.user_id, role_id=rider_role.id)
 
         await self.repository.commit()
+
+        # Ensure a real rider Workspace exists now that the role is granted,
+        # and default the user into it if they're still sitting on the
+        # customer workspace created at signup — mirrors
+        # WorkspaceService.approve_application's merchant equivalent, so
+        # rider mode persists across app restarts the same way merchant
+        # mode already does, instead of always resetting to customer.
+        #
+        # application.user.roles was already loaded above for the
+        # already_has_role check, so within this same session/identity-map
+        # a plain re-query won't see the role just added — it has to be
+        # explicitly refreshed, or ensure_rider_workspace_if_eligible below
+        # would look at the stale pre-grant collection and silently no-op.
+        if not already_has_role:
+            await self.session.refresh(application.user, attribute_names=["roles"])
+
+        workspace_repo = WorkspaceRepository(self.session)
+        fresh_user = await workspace_repo.get_user_with_workspaces(application.user_id)
+        if fresh_user is not None:
+            workspace_service = WorkspaceService(self.session)
+            rider_workspace = await workspace_service.ensure_rider_workspace_if_eligible(fresh_user)
+            if (
+                rider_workspace is not None
+                and fresh_user.active_workspace is not None
+                and fresh_user.active_workspace.workspace_type == "customer"
+            ):
+                fresh_user.active_workspace_id = rider_workspace.id
+            await self.session.commit()
+
         refreshed = await self.repository.get_application_by_id(application.id)
         if refreshed is None:
             raise HTTPException(status_code=500, detail="Failed to approve rider application.")

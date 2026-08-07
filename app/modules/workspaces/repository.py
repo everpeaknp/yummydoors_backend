@@ -184,6 +184,49 @@ class WorkspaceRepository:
         await self.session.flush()
         return workspace
 
+    async def get_or_create_rider_workspace(self, user: User) -> Workspace:
+        """Mirrors get_or_create_customer_workspace above — riders need a
+        real Workspace row too, so switching to rider mode can persist via
+        the same active_workspace_id mechanism customer/merchant already
+        use, instead of being a client-side-only navigation that's
+        forgotten on every app restart."""
+        stmt = (
+            select(WorkspaceMembership)
+            .options(selectinload(WorkspaceMembership.workspace))
+            .where(
+                WorkspaceMembership.user_id == user.id,
+                WorkspaceMembership.membership_role == "owner",
+                WorkspaceMembership.status == "active",
+            )
+        )
+        result = await self.session.execute(stmt)
+        memberships = result.scalars().all()
+        for membership in memberships:
+            if membership.workspace.workspace_type == "rider":
+                return membership.workspace
+
+        workspace = Workspace(
+            workspace_type="rider",
+            name=f"{user.full_name.strip()} Rider",
+            slug=None,
+            status="active",
+            is_personal=True,
+            metadata_json={"owner_user_id": user.id},
+        )
+        self.session.add(workspace)
+        await self.session.flush()
+
+        membership = WorkspaceMembership(
+            workspace_id=workspace.id,
+            user_id=user.id,
+            membership_role="owner",
+            status="active",
+            is_primary=False,
+        )
+        self.session.add(membership)
+        await self.session.flush()
+        return workspace
+
     async def create_merchant_application(self, application: MerchantApplication) -> MerchantApplication:
         self.session.add(application)
         await self.session.flush()

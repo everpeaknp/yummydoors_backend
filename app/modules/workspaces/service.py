@@ -39,6 +39,17 @@ class WorkspaceService:
             user.active_workspace_id = workspace.id
         return workspace
 
+    async def ensure_rider_workspace_if_eligible(self, user: User) -> Workspace | None:
+        """Called alongside ensure_customer_workspace on the same broad hook
+        points (registration, login, /auth/me) so any user who already has
+        rider role access gets a real rider Workspace row lazily created —
+        without this, switching to rider mode had nothing to persist to
+        active_workspace_id and always reset to customer on next launch."""
+        has_rider_role = any(user_role.role.code == "rider" for user_role in user.roles)
+        if not has_rider_role:
+            return None
+        return await self.repository.get_or_create_rider_workspace(user)
+
     async def list_user_workspaces(self, user_id: int) -> WorkspaceListResponse:
         user = await self.repository.get_user_with_workspaces(user_id)
         if user is None:
