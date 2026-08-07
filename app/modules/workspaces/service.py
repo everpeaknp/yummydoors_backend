@@ -400,6 +400,23 @@ class WorkspaceService:
                 user = await self.repository.get_user_with_workspaces(application.user_id)
                 if user is not None and user.active_restaurant_id is None:
                     user.active_restaurant_id = primary_restaurant.id
+                # A freshly-approved merchant should land in their new
+                # merchant workspace by default. Every user's
+                # active_workspace_id is set to their personal customer
+                # workspace at signup (ensure_customer_workspace), so
+                # without this it would silently stay pinned there forever
+                # unless the client happens to call /workspaces/switch —
+                # leaving every merchant-gated endpoint 403ing even though
+                # the user now has real merchant access. Only auto-switch
+                # while they're still on that default customer workspace,
+                # so we don't clobber an existing explicit choice (e.g.
+                # they're already using another merchant/rider workspace).
+                if (
+                    user is not None
+                    and user.active_workspace is not None
+                    and user.active_workspace.workspace_type == "customer"
+                ):
+                    user.active_workspace_id = application.workspace.id
         await self.repository.commit()
 
         refreshed = await self.repository.get_application_by_id(application_id)

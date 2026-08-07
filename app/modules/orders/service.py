@@ -945,13 +945,13 @@ class OrderService:
         from app.modules.workspaces.repository import WorkspaceRepository
 
         workspace_repo = WorkspaceRepository(self.session)
-        workspace = await workspace_repo.get_active_workspace(merchant_user_id)
-        if not workspace or workspace.workspace_type != "merchant":
+        restaurant_id = await workspace_repo.get_active_merchant_restaurant_id(merchant_user_id)
+        if restaurant_id is None:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Active workspace is not a merchant workspace.",
             )
-        return workspace.primary_restaurant_id
+        return restaurant_id
 
     async def _load_user_with_roles(self, user_id: int) -> User | None:
         stmt = (

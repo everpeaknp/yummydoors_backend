@@ -930,17 +930,11 @@ async def get_merchant_stats(
 
     # ── workspace check ──────────────────────────────────────────────────────
     workspace_repo = WorkspaceRepository(db)
-    workspace = await workspace_repo.get_active_workspace(current_user.id)
-    if not workspace or workspace.workspace_type != "merchant":
+    restaurant_id = await workspace_repo.get_active_merchant_restaurant_id(current_user.id)
+    if not restaurant_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Active workspace is not a merchant workspace.",
-        )
-    restaurant_id = workspace.primary_restaurant_id
-    if not restaurant_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No active restaurant in this workspace.",
         )
 
     now_utc = datetime.now(UTC)
@@ -1090,17 +1084,11 @@ async def get_merchant_analytics(
     from app.modules.workspaces.repository import WorkspaceRepository
 
     workspace_repo = WorkspaceRepository(db)
-    workspace = await workspace_repo.get_active_workspace(current_user.id)
-    if not workspace or workspace.workspace_type != "merchant":
+    restaurant_id = await workspace_repo.get_active_merchant_restaurant_id(current_user.id)
+    if not restaurant_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Active workspace is not a merchant workspace.",
-        )
-    restaurant_id = workspace.primary_restaurant_id
-    if not restaurant_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No active restaurant in this workspace.",
         )
 
     return await build_merchant_analytics(

@@ -718,8 +718,8 @@ class RiderDispatchService:
 
     async def _require_managed_restaurant(self, user_id: int, restaurant_id: int) -> Restaurant:
         workspace_repo = WorkspaceRepository(self.session)
-        workspace = await workspace_repo.get_active_workspace(user_id)
-        if workspace is None or workspace.workspace_type != "merchant" or workspace.primary_restaurant_id != restaurant_id:
+        active_restaurant_id = await workspace_repo.get_active_merchant_restaurant_id(user_id)
+        if active_restaurant_id != restaurant_id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You are not allowed to manage this restaurant.")
         restaurant = await self.session.get(Restaurant, restaurant_id)
         if restaurant is None:

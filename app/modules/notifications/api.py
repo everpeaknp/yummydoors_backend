@@ -62,13 +62,13 @@ async def _resolve_merchant_restaurant_id(
         return restaurant_id
 
     workspace_repo = WorkspaceRepository(db)
-    workspace = await workspace_repo.get_active_workspace(current_user.id)
-    if workspace is None or workspace.workspace_type != "merchant" or workspace.primary_restaurant_id is None:
+    resolved_restaurant_id = await workspace_repo.get_active_merchant_restaurant_id(current_user.id)
+    if resolved_restaurant_id is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No active merchant workspace.",
         )
-    return workspace.primary_restaurant_id
+    return resolved_restaurant_id
 
 
 async def _list_notifications_internal(

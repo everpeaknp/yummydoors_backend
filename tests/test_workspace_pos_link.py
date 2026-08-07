@@ -69,7 +69,9 @@ def _make_repository(*, application, existing_pos_link=None):
     repo.create_restaurant_pos_link = AsyncMock(
         side_effect=lambda link: link,
     )
-    repo.get_user_with_workspaces = AsyncMock(return_value=SimpleNamespace(active_restaurant_id=None))
+    repo.get_user_with_workspaces = AsyncMock(
+        return_value=SimpleNamespace(active_restaurant_id=None, active_workspace=None)
+    )
     repo.commit = AsyncMock()
     return repo
 

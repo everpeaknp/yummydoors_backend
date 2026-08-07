@@ -35,6 +35,56 @@ class WorkspaceRepository:
             return None
         return user.active_workspace
 
+    async def get_active_merchant_restaurant_id(self, user_id: int) -> int | None:
+        """Resolve the restaurant a merchant-capable user is currently acting for.
+
+        Prefers `active_workspace_id` (the source of truth used by the
+        workspace-switch UI), but falls back to `active_restaurant_id` when
+        the two have drifted apart. This is a legitimate, common state, not
+        just corrupt data: approving a merchant application sets
+        `active_restaurant_id` to the newly-approved restaurant but never
+        touches `active_workspace_id`, which stays pinned at the customer
+        workspace created for every user at signup — see
+        WorkspaceService.approve_application. Without this fallback,
+        merchant-gated endpoints (dashboard stats, order status changes,
+        rider assignment, etc.) 403 for any merchant who hasn't explicitly
+        called `/workspaces/switch` at least once, even though every other
+        signal (roles, restaurant assignments) says they're a merchant.
+
+        The fallback restaurant is only trusted if the user actually has a
+        `RestaurantUserAssignment` to it, so a stale/tampered
+        `active_restaurant_id` can't grant access to a restaurant the user
+        has no real relationship with.
+        """
+        from app.modules.workspaces.models import Workspace as _Workspace
+
+        stmt = (
+            select(User)
+            .options(
+                selectinload(User.active_workspace).selectinload(_Workspace.primary_restaurant),
+            )
+            .where(User.id == user_id)
+        )
+        result = await self.session.execute(stmt)
+        user = result.scalar_one_or_none()
+        if user is None:
+            return None
+
+        if user.active_workspace is not None and user.active_workspace.workspace_type == "merchant":
+            return user.active_workspace.primary_restaurant_id
+
+        if user.active_restaurant_id is None:
+            return None
+
+        assignment_stmt = select(RestaurantUserAssignment).where(
+            RestaurantUserAssignment.user_id == user_id,
+            RestaurantUserAssignment.restaurant_id == user.active_restaurant_id,
+        )
+        assignment_result = await self.session.execute(assignment_stmt)
+        if assignment_result.scalars().first() is None:
+            return None
+        return user.active_restaurant_id
+
     async def get_user_with_workspaces(self, user_id: int) -> User | None:
         stmt = (
             select(User)

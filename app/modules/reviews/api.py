@@ -15,18 +15,13 @@ router = APIRouter(prefix="/reviews", tags=["Reviews"])
 
 async def _get_merchant_restaurant_id(user_id: int, session: AsyncSession) -> int:
     workspace_repo = WorkspaceRepository(session)
-    workspace = await workspace_repo.get_active_workspace(user_id)
-    if not workspace or workspace.workspace_type != "merchant":
+    restaurant_id = await workspace_repo.get_active_merchant_restaurant_id(user_id)
+    if not restaurant_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Active workspace is not a merchant workspace.",
         )
-    if not workspace.primary_restaurant_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No active restaurant in this workspace.",
-        )
-    return workspace.primary_restaurant_id
+    return restaurant_id
 
 
 @router.get("/merchant/me", response_model=list[ReviewResponse])
