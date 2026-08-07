@@ -442,6 +442,22 @@ class OrderService:
         order = await self.repo.get_order_by_id(order.id, customer_id)
         if order is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
+
+        # Private-only restaurants have their own dedicated rider team, so
+        # there's no reason to wait for the merchant to start preparing
+        # before dispatching — and assign_rider_to_order already tells
+        # merchants "the order is sent automatically" the moment they try to
+        # assign manually. Without this, that message was a false promise:
+        # dispatch_next_offer was only ever called on the preparing
+        # transition, so an order could sit fully undispatched — invisible
+        # to every rider — until the merchant happened to advance its status.
+        if order.restaurant is not None and order.restaurant.rider_dispatch_policy == "private_only":
+            dispatch_service = RiderDispatchService(self.session)
+            await dispatch_service.dispatch_next_offer(order_id=order.id)
+            order = await self.repo.get_order_by_id(order.id, customer_id)
+            if order is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
+
         return self._format_order_response(order)
 
     async def get_my_orders(self, customer_id: int) -> list[OrderResponse]:
