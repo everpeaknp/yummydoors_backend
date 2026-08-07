@@ -192,7 +192,7 @@ class CartService:
 
     async def add_item_to_cart(self, customer_id: int, restaurant_id: int, item_data: CartItemCreate) -> CartResponse:
         restaurant = await self.repo.session.get(Restaurant, restaurant_id)
-        if restaurant is None or not restaurant.is_active:
+        if restaurant is None or restaurant.status != "active":
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Restaurant not found")
         cart = await self.repo.get_active_cart(customer_id, restaurant_id)
         if not cart:
