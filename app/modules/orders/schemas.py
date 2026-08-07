@@ -66,6 +66,9 @@ class OrderResponse(BaseModel):
     restaurantPhone: str | None = None
     deliveryTime: str
     status: OrderStatus
+    subStatus: str = "placed"
+    liveEtaMinutes: int | None = None
+    liveEtaText: str | None = None
     items: list[OrderItemResponse]
     totalPrice: float
     orderNumber: str
@@ -106,6 +109,9 @@ class MerchantOrderResponse(BaseModel):
     customerName: str
     date: str
     status: OrderStatus
+    subStatus: str = "placed"
+    liveEtaMinutes: int | None = None
+    liveEtaText: str | None = None
     paymentStatus: str = "unpaid"
     totalPrice: float
     items: list[OrderItemResponse]

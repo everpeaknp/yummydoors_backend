@@ -1,4 +1,5 @@
 import logging
+import math
 from datetime import UTC, datetime
 from fastapi import HTTPException, status
 from sqlalchemy import and_, select, update
@@ -149,6 +150,75 @@ class OrderService:
             ),
         ]
 
+    # Single source of truth for the customer-facing sub-status derived from
+    # timestamps — OrderStatus itself only has placed/preparing/delivered/
+    # cancelled, so every client used to reverse-engineer "rider assigned" /
+    # "picked up" / "on the way" from raw timestamp fields independently.
+    # Centralizing it here means clients read one field instead of
+    # re-implementing this logic (and risking drift/bugs, as already
+    # happened once this session).
+    @staticmethod
+    def _derive_sub_status(order: Order) -> str:
+        if order.status == OrderStatus.cancelled:
+            return "cancelled"
+        if order.status == OrderStatus.delivered or order.delivered_at:
+            return "delivered"
+        if order.picked_up_at:
+            return "on_the_way"
+        if order.rider_assigned_at:
+            return "rider_assigned"
+        if order.preparing_at or order.status == OrderStatus.preparing:
+            return "preparing"
+        return "placed"
+
+    @staticmethod
+    def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+        radius_km = 6371.0
+        phi1, phi2 = math.radians(lat1), math.radians(lat2)
+        d_phi = math.radians(lat2 - lat1)
+        d_lambda = math.radians(lon2 - lon1)
+        a = math.sin(d_phi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(d_lambda / 2) ** 2
+        return radius_km * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+    # Real-time ETA estimate from the rider's live GPS to whichever stop is
+    # next (the restaurant if not yet picked up, the delivery address once
+    # it's picked up) — replaces the static "20-30 min" snapshot taken once
+    # at checkout, which never moved again no matter how close the rider
+    # actually got. Straight-line distance over an assumed urban delivery
+    # speed rather than a routed duration, to avoid an OSRM round-trip on
+    # every order-detail fetch; a small buffer keeps it from reading
+    # unrealistically low right as the rider arrives.
+    _AVERAGE_DELIVERY_SPEED_KMH = 18.0
+
+    @classmethod
+    def _live_eta_minutes(cls, order: Order) -> int | None:
+        if order.status in {OrderStatus.delivered, OrderStatus.cancelled}:
+            return None
+        rider = order.rider
+        if rider is None or rider.current_latitude is None or rider.current_longitude is None:
+            return None
+
+        if order.picked_up_at:
+            target_lat, target_lon = order.delivery_latitude, order.delivery_longitude
+        else:
+            target_lat = order.restaurant.latitude if order.restaurant else None
+            target_lon = order.restaurant.longitude if order.restaurant else None
+        if target_lat is None or target_lon is None:
+            return None
+
+        distance_km = cls._haversine_km(rider.current_latitude, rider.current_longitude, target_lat, target_lon)
+        minutes = (distance_km / cls._AVERAGE_DELIVERY_SPEED_KMH) * 60
+        return max(2, round(minutes) + 2)
+
+    @classmethod
+    def _live_eta_text(cls, order: Order) -> str | None:
+        minutes = cls._live_eta_minutes(order)
+        if minutes is None:
+            return None
+        if order.picked_up_at:
+            return f"Arriving in ~{minutes} min"
+        return f"Rider ~{minutes} min from the restaurant"
+
     @staticmethod
     def _snapshot_user(user: User | None) -> UserSnapshot | None:
         if user is None:
@@ -218,6 +288,9 @@ class OrderService:
             restaurantPhone=restaurant_phone,
             deliveryTime=delivery_time,
             status=order.status,
+            subStatus=self._derive_sub_status(order),
+            liveEtaMinutes=self._live_eta_minutes(order),
+            liveEtaText=self._live_eta_text(order),
             items=items,
             totalPrice=order.total_price,
             orderNumber=order.order_number,
@@ -295,6 +368,9 @@ class OrderService:
             customerName=order.customer.full_name if order.customer else "Unknown",
             date=order.created_at.strftime("%d/%m/%Y"),
             status=order.status,
+            subStatus=self._derive_sub_status(order),
+            liveEtaMinutes=self._live_eta_minutes(order),
+            liveEtaText=self._live_eta_text(order),
             paymentStatus=order.payment_status,
             totalPrice=order.total_price,
             items=items,
@@ -915,6 +991,39 @@ class OrderService:
         if order is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found.")
         return self._format_merchant_order_response(order)
+
+    async def release_rider_assignment(
+        self, rider_user_id: int, order_id: int, reason: str | None = None
+    ) -> MerchantOrderResponse:
+        """Lets an assigned rider back out before pickup (bike broke down,
+        emergency, etc.) instead of being stuck with a job they can't
+        actually deliver — there was previously no way to do this at all.
+        Once the food's already been picked up it's too late to hand off
+        cleanly, so that case still requires the restaurant/support."""
+        order = await self.repo.get_by_id(order_id)
+        if not order:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found.")
+        if order.rider_user_id != rider_user_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This order is not assigned to you.")
+        if order.picked_up_at is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This order has already been picked up — contact the restaurant or support to hand it off.",
+            )
+        if order.status in {OrderStatus.delivered, OrderStatus.cancelled}:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This order is already closed.")
+
+        rider = await self._load_user_with_roles(rider_user_id)
+        if rider is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rider not found.")
+
+        dispatch_service = RiderDispatchService(self.session)
+        await dispatch_service.release_assignment(rider=rider, order=order, reason=reason)
+
+        refreshed = await self.repo.get_by_id(order_id)
+        if refreshed is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found.")
+        return self._format_merchant_order_response(refreshed)
 
     async def rider_mark_picked_up(self, rider_user_id: int, order_id: int) -> MerchantOrderResponse:
         order = await self.repo.get_by_id(order_id)

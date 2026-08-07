@@ -25,7 +25,12 @@ from app.modules.rider_dispatch.schemas import (
 )
 from app.modules.restaurants.models import Restaurant, RestaurantUserAssignment
 from app.modules.workspaces.repository import WorkspaceRepository
-from app.modules.realtime.bus import ORDER_RIDER_CHANNEL, realtime_bus
+from app.modules.realtime.bus import (
+    ORDER_CUSTOMER_CHANNEL,
+    ORDER_MERCHANT_CHANNEL,
+    ORDER_RIDER_CHANNEL,
+    realtime_bus,
+)
 from app.tasks.notifications import send_email_task
 
 logger = logging.getLogger(__name__)
@@ -307,10 +312,18 @@ class RiderDispatchService:
         restaurant = order.restaurant
         candidates = await self._dispatch_candidates_for_order(order, restaurant)
         if not candidates:
+            # Every tier (private -> preferred -> open) has now been offered
+            # and expired/rejected with nobody left to try — previously this
+            # just sat as "open_unfilled" forever with no signal to anyone.
+            # Only fire once per exhaustion, not on every repeat call once
+            # already flagged.
+            already_flagged = order.rider_assignment_state == "open_unfilled"
             order.rider_assignment_state = "open_unfilled"
             order.rider_assignment_tier = None
             order.rider_offer_expires_at = None
             await self.session.commit()
+            if not already_flagged:
+                await self._notify_dispatch_exhausted(order, restaurant)
             return None
 
         pending_result = await self.session.execute(
@@ -491,6 +504,72 @@ class RiderDispatchService:
         await self.session.refresh(offer)
         return self._build_offer_response(offer)
 
+    async def release_assignment(self, *, rider: User, order: Order, reason: str | None = None) -> None:
+        """Lets a rider back out of a job they've already accepted but not
+        yet picked up (bike broke down, emergency, etc.) — previously there
+        was no self-service way to do this at all once accepted; a rider
+        was simply stuck with it, and even a merchant had no direct
+        "unassign" action to free it up for someone else."""
+        now = datetime.now(UTC)
+        await self.session.execute(
+            update(OrderDispatchOffer)
+            .where(
+                OrderDispatchOffer.order_id == order.id,
+                OrderDispatchOffer.rider_user_id == rider.id,
+                OrderDispatchOffer.status == "accepted",
+            )
+            .values(status="released", responded_at=now)
+        )
+        # Setting the relationship itself (not just the FK column) so the
+        # in-memory order.rider attribute is actually cleared — mutating
+        # rider_user_id directly leaves an already-loaded .rider relationship
+        # stale, since selectinload options don't force a reload of a
+        # relationship that's already populated on an identity-mapped object.
+        order.rider = None
+        order.rider_assigned_at = None
+        order.rider_assignment_state = "unassigned"
+        order.rider_assignment_tier = None
+        await self.session.commit()
+
+        await self._notify_rider_released(order, rider, reason)
+        # Immediately look for a replacement instead of leaving the order
+        # sitting at "unassigned" until something else happens to poke it.
+        await self.dispatch_next_offer(order_id=order.id)
+
+    async def _notify_rider_released(self, order: Order, rider: User, reason: str | None) -> None:
+        body = f"{rider.full_name} can no longer deliver order {order.order_number}"
+        body += f" ({reason.strip()})." if reason and reason.strip() else " and released it back."
+        merchant_payload = {
+            "event": "rider_released_order",
+            "event_id": f"order-{order.id}-released-{int(datetime.now(UTC).timestamp())}",
+            "audience": "merchant",
+            "category": "order_dispatch",
+            "order_id": order.id,
+            "order_number": order.order_number,
+            "restaurant_id": order.restaurant_id,
+            "title": "Rider released this order",
+            "body": f"{body} We're looking for a replacement automatically.",
+            "deep_link": f"/merchant/orders/{order.id}",
+        }
+        try:
+            await self.notifications.create_merchant_notifications_from_payload(
+                restaurant_id=order.restaurant_id,
+                payload=merchant_payload,
+                actor_user_id=rider.id,
+                order_id=order.id,
+            )
+        except Exception:
+            pass
+        try:
+            await self.notifications.send_web_push_to_merchants(restaurant_id=order.restaurant_id, payload=merchant_payload)
+            await self.notifications.send_fcm_to_merchants(restaurant_id=order.restaurant_id, payload=merchant_payload)
+        except Exception:
+            pass
+        try:
+            await realtime_bus.publish(ORDER_MERCHANT_CHANNEL, {**merchant_payload, "restaurant_id": order.restaurant_id})
+        except Exception:
+            pass
+
     async def reject_offer(self, *, user: User, offer_id: int) -> RiderDispatchOfferResponse:
         offer = await self.session.get(OrderDispatchOffer, offer_id)
         if offer is None:
@@ -579,6 +658,71 @@ class RiderDispatchService:
         except Exception:
             pass
 
+    async def _notify_dispatch_exhausted(self, order: Order, restaurant: Restaurant) -> None:
+        """Every dispatch tier has expired/rejected with no rider left to
+        offer — previously this left the order silently stuck at
+        open_unfilled with no signal to the merchant (who needs to assign
+        someone manually) or the customer (who's otherwise left wondering
+        why nothing's moving)."""
+        merchant_payload = {
+            "event": "rider_dispatch_exhausted",
+            "event_id": f"order-{order.id}-dispatch-exhausted",
+            "audience": "merchant",
+            "category": "order_dispatch",
+            "order_id": order.id,
+            "order_number": order.order_number,
+            "restaurant_id": order.restaurant_id,
+            "title": "No rider found automatically",
+            "body": f"Order {order.order_number} needs a rider assigned manually — no one accepted the automatic offers.",
+            "deep_link": f"/merchant/orders/{order.id}",
+        }
+        try:
+            await self.notifications.create_merchant_notifications_from_payload(
+                restaurant_id=restaurant.id,
+                payload=merchant_payload,
+                order_id=order.id,
+            )
+        except Exception:
+            pass
+        try:
+            await self.notifications.send_web_push_to_merchants(restaurant_id=restaurant.id, payload=merchant_payload)
+            await self.notifications.send_fcm_to_merchants(restaurant_id=restaurant.id, payload=merchant_payload)
+        except Exception:
+            pass
+        try:
+            await realtime_bus.publish(ORDER_MERCHANT_CHANNEL, {**merchant_payload, "restaurant_id": restaurant.id})
+        except Exception:
+            pass
+
+        customer_payload = {
+            "event": "rider_dispatch_delayed",
+            "event_id": f"order-{order.id}-dispatch-delayed",
+            "audience": "customer",
+            "category": "order_dispatch",
+            "order_id": order.id,
+            "order_number": order.order_number,
+            "title": "Still finding you a rider",
+            "body": "It's taking a little longer than usual to assign a rider — the restaurant has been notified to help out.",
+            "deep_link": "/orders",
+        }
+        try:
+            await self.notifications.create_notification_from_payload(
+                recipient_user_id=order.customer_id,
+                payload=customer_payload,
+                actor_user_id=None,
+            )
+        except Exception:
+            pass
+        try:
+            await self.notifications.send_web_push_to_user(user_id=order.customer_id, payload=customer_payload)
+            await self.notifications.send_fcm_to_user(user_id=order.customer_id, payload=customer_payload)
+        except Exception:
+            pass
+        try:
+            await realtime_bus.publish(ORDER_CUSTOMER_CHANNEL, {**customer_payload, "customer_id": order.customer_id})
+        except Exception:
+            pass
+
     async def _dispatch_candidates_for_order(
         self,
         order: Order,
@@ -588,7 +732,7 @@ class RiderDispatchService:
         prior_result = await self.session.execute(
             select(OrderDispatchOffer.rider_user_id).where(
                 OrderDispatchOffer.order_id == order.id,
-                OrderDispatchOffer.status.in_({"rejected", "expired"}),
+                OrderDispatchOffer.status.in_({"rejected", "expired", "released"}),
             )
         )
         previously_offered_rider_ids = set(prior_result.scalars().all())

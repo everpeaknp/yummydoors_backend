@@ -409,6 +409,34 @@ async def claim_rider_order(
     return updated
 
 
+@router.post("/rider/{order_id}/release", response_model=MerchantOrderResponse)
+async def release_rider_order(
+    order_id: int,
+    reason: str | None = None,
+    current_user: User = Depends(require_role(["rider"])),
+    db: AsyncSession = Depends(get_db),
+):
+    service = OrderService(db)
+    updated = await service.release_rider_assignment(current_user.id, order_id, reason=reason)
+
+    customer_payload = build_customer_order_event(updated, status_value=updated.status.value)
+    merchant_payload = build_merchant_order_event(
+        order_id=updated.id,
+        order_number=updated.orderNumber,
+        restaurant_id=updated.restaurantId,
+        restaurant_name=updated.restaurantName,
+        customer_name=updated.customerName,
+        status_value="rider_released",
+        event_name="order_update",
+    )
+    try:
+        await realtime_bus.publish(ORDER_MERCHANT_CHANNEL, _with_restaurant_scope(merchant_payload, updated.restaurantId))
+        await realtime_bus.publish(ORDER_CUSTOMER_CHANNEL, _with_customer_scope(customer_payload, updated.customerId))
+    except Exception:
+        logger.exception("failed to publish rider release websocket event")
+    return updated
+
+
 @router.patch("/rider/{order_id}/picked-up", response_model=MerchantOrderResponse)
 async def mark_rider_picked_up(
     order_id: int,

@@ -38,6 +38,9 @@ EXPECTED_ORDER_EVENT_NAMES = {
     "delivered",
     "rider_offer",
     "rider_team_invitation",
+    "rider_dispatch_exhausted",
+    "rider_dispatch_delayed",
+    "rider_released_order",
 }
 
 _EVENT_LITERAL_RE = re.compile(r'event(?:_name)?\s*=\s*"([a-z_]+)"')
