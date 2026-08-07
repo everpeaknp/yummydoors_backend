@@ -63,6 +63,7 @@ class OrderResponse(BaseModel):
     restaurantLongitude: float | None = None
     restaurantTags: str
     restaurantLogo: str
+    restaurantPhone: str | None = None
     deliveryTime: str
     status: OrderStatus
     items: list[OrderItemResponse]

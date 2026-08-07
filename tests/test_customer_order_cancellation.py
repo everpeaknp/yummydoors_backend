@@ -28,6 +28,7 @@ def _order(*, status, customer_id=5):
             rider_dispatch_policy="ranked",
             logo_url=None,
             primary_cuisine_label=None,
+            contact_phone=None,
         ),
         customer_id=customer_id,
         customer=SimpleNamespace(full_name="Test Customer"),

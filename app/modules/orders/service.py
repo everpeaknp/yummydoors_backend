@@ -184,6 +184,7 @@ class OrderService:
             if order.restaurant and order.restaurant.primary_cuisine_label
             else ""
         )
+        restaurant_phone = order.restaurant.contact_phone if order.restaurant else None
         delivery_time = order.estimated_delivery_window or "20-30 min"
         items_total = round(sum(item.price * item.quantity for item in order.items), 2)
 
@@ -214,6 +215,7 @@ class OrderService:
             restaurantLongitude=order.restaurant.longitude if order.restaurant else None,
             restaurantTags=restaurant_tags,
             restaurantLogo=restaurant_logo,
+            restaurantPhone=restaurant_phone,
             deliveryTime=delivery_time,
             status=order.status,
             items=items,
