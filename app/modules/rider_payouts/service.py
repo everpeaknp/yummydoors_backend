@@ -44,7 +44,9 @@ class RiderPayoutService:
             return None
         # Private/preferred riders are employed by the restaurant and paid
         # directly by them — the platform has nothing to pay out here.
-        if order.rider.rider_work_mode != "freelance":
+        # Freelance (open pool) and platform-onboarded riders both do
+        # platform-brokered gig work and get paid the same way.
+        if order.rider.rider_work_mode not in {"freelance", "platform"}:
             return None
 
         existing = await self.session.execute(select(RiderPayout).where(RiderPayout.order_id == order.id))

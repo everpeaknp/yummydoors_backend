@@ -19,6 +19,7 @@ from app.modules.realtime.bus import (
 )
 from app.tasks.notifications import send_merchant_push_task, send_user_push_task
 from app.modules.orders.models import OrderStatus
+from app.modules.restaurant_settlements.schemas import RestaurantSettlementResponse
 from app.modules.orders.schemas import (
     CheckoutRequest,
     MerchantOrderResponse,
@@ -305,6 +306,15 @@ async def list_merchant_riders(
 ):
     service = OrderService(db)
     return await service.list_restaurant_riders(current_user.id)
+
+
+@router.get("/merchant/settlements", response_model=List[RestaurantSettlementResponse])
+async def list_merchant_settlements(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    service = OrderService(db)
+    return await service.list_merchant_settlements(current_user.id)
 
 
 @router.post("/merchant/{order_id}/assign-rider", response_model=MerchantOrderResponse)

@@ -64,6 +64,11 @@ class UserLocationUpdateRequest(BaseModel):
 
 
 class RiderWorkModeUpdateRequest(BaseModel):
+    # Self-service only covers freelance <-> assigned. "platform" (a rider
+    # directly onboarded by the platform itself, not tied to any one
+    # restaurant — the guaranteed fallback tier) is an admin-granted
+    # designation, not something a rider can toggle on themselves — see
+    # AdminRiderPlatformStatusUpdateRequest.
     rider_work_mode: str = Field(pattern="^(freelance|assigned)$")
 
 

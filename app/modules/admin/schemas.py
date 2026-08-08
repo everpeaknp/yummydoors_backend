@@ -23,6 +23,16 @@ class AdminUserStatusUpdate(BaseModel):
     status: str = Field(..., pattern="^(active|suspended)$")
 
 
+class AdminRiderPlatformStatusUpdate(BaseModel):
+    is_platform_rider: bool
+
+
+class AdminRiderPlatformStatusResponse(BaseModel):
+    id: int
+    full_name: str
+    rider_work_mode: str
+
+
 class AdminWorkspaceStatusResponse(BaseModel):
     id: int
     name: str

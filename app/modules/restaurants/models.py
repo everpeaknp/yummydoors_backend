@@ -52,7 +52,7 @@ class Restaurant(Base, TimestampMixin):
     # Platform's cut of this restaurant's item subtotal per order, as a
     # percent (15.0 = 15%). Defaults to the platform-wide standard rate but
     # is editable per restaurant for negotiated deals.
-    commission_rate_percent: Mapped[float] = mapped_column(Float, default=15.0, nullable=False)
+    commission_rate_percent: Mapped[float] = mapped_column(Float, default=18.0, nullable=False)
     sort_rank: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     is_featured: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 

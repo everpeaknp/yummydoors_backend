@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 import logging
 from datetime import UTC, datetime, timedelta
 
@@ -9,6 +8,7 @@ from sqlalchemy import and_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.geo import haversine_km
 from app.modules.auth.models import Role, User, UserRole
 from app.modules.notifications.service import NotificationService
 from app.modules.auth.notifications import send_email_message
@@ -37,6 +37,13 @@ logger = logging.getLogger(__name__)
 
 
 class RiderDispatchService:
+    # Fixed, not per-restaurant-configurable like the other tiers — this is
+    # platform policy (the guaranteed last-resort pool), not something an
+    # individual restaurant should be tuning. Shorter than the open-pool
+    # default (300s) since it's meant to be a fast, decisive final fallback
+    # rather than another round of waiting.
+    PLATFORM_TIER_OFFER_TIMEOUT_SECONDS = 90
+
     def __init__(self, session: AsyncSession):
         self.session = session
         self.order_repo = OrderRepository(session)
@@ -759,7 +766,7 @@ class RiderDispatchService:
                     continue
                 ranked.append(candidate)
 
-        tier_order = {"rider_private": 0, "rider_preferred": 1, "open": 2}
+        tier_order = {"rider_private": 0, "rider_preferred": 1, "open": 2, "platform": 3}
         return sorted(
             ranked,
             key=lambda item: (
@@ -776,7 +783,7 @@ class RiderDispatchService:
             return None
         if user.rider_work_mode == "assigned" and assignment_type == "open":
             return None
-        if assignment_type == "open" and not user.is_accepting_offers:
+        if assignment_type in {"open", "platform"} and not user.is_accepting_offers:
             return None
         distance_km = self._distance_to_restaurant(user, restaurant)
         return RiderDispatchCandidateResponse(
@@ -803,7 +810,15 @@ class RiderDispatchService:
             return "rider_private"
         if assignment_types.intersection({"rider_preferred", "preferred_rider"}):
             return "rider_preferred"
-        if "rider" in {role.role.code for role in user.roles} and user.rider_work_mode == "freelance":
+        if "rider" not in {role.role.code for role in user.roles}:
+            return None
+        # Platform-onboarded riders are the guaranteed last-resort fallback
+        # — tried after the open pool, not instead of it, since an
+        # opportunistic nearby freelancer is still cheaper/faster than
+        # paging the dedicated platform pool.
+        if user.rider_work_mode == "platform":
+            return "platform"
+        if user.rider_work_mode == "freelance":
             return "open"
         if assignment_types.intersection({"rider", "rider_open", "open_rider"}):
             return "open"
@@ -831,7 +846,7 @@ class RiderDispatchService:
         if None in {user.current_latitude, user.current_longitude, restaurant.latitude, restaurant.longitude}:
             return None
         return round(
-            self._haversine_km(
+            haversine_km(
                 user.current_latitude or 0.0,
                 user.current_longitude or 0.0,
                 restaurant.latitude or 0.0,
@@ -840,24 +855,13 @@ class RiderDispatchService:
             2,
         )
 
-    @staticmethod
-    def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-        r = 6371.0
-        dlat = math.radians(lat2 - lat1)
-        dlon = math.radians(lon2 - lon1)
-        a = (
-            math.sin(dlat / 2) ** 2
-            + math.cos(math.radians(lat1))
-            * math.cos(math.radians(lat2))
-            * math.sin(dlon / 2) ** 2
-        )
-        return 2 * r * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-
     def _timeout_for_tier(self, restaurant: Restaurant, tier: str) -> int:
         if tier == "rider_private":
             return restaurant.rider_private_offer_timeout_seconds
         if tier == "rider_preferred":
             return restaurant.rider_preferred_offer_timeout_seconds
+        if tier == "platform":
+            return self.PLATFORM_TIER_OFFER_TIMEOUT_SECONDS
         return restaurant.rider_open_offer_timeout_seconds
 
     async def _require_managed_restaurant(self, user_id: int, restaurant_id: int) -> Restaurant:

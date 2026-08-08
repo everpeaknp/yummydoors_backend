@@ -35,6 +35,8 @@ from app.modules.admin.schemas import (
     AdminOperatorResponse,
     AdminReviewModerationUpdate,
     AdminReviewResponse,
+    AdminRiderPlatformStatusResponse,
+    AdminRiderPlatformStatusUpdate,
     AdminUserStatusUpdate,
     AdminWorkspaceStatusResponse,
     AdminWorkspaceStatusUpdate,
@@ -138,6 +140,43 @@ async def update_admin_operator_status(
             status=user.status, roles=sorted({role.role.code for role in user.roles}),
             restaurant_ids=sorted({assignment.restaurant_id for assignment in user.restaurant_assignments}),
             workspace_ids=sorted({membership.workspace_id for membership in user.workspace_memberships}),
+        ),
+    )
+
+
+@router.patch(
+    "/riders/{user_id}/platform-status",
+    response_model=ApiResponse[AdminRiderPlatformStatusResponse],
+    dependencies=[Depends(require_role(["super_admin", "ops_admin"]))],
+)
+async def update_rider_platform_status(
+    user_id: int,
+    payload: AdminRiderPlatformStatusUpdate,
+    db: AsyncSession = Depends(get_db),
+):
+    """Grants or revokes "platform rider" status — a rider directly
+    onboarded by the platform itself (not tied to any one restaurant), used
+    as the guaranteed dispatch fallback when a restaurant has no private
+    team and no preferred/open rider is available. Deliberately
+    admin-only: unlike freelance <-> assigned (self-service), this isn't
+    something a rider should be able to grant themselves."""
+    user = await db.scalar(
+        select(User).where(User.id == user_id).options(selectinload(User.roles).selectinload(UserRole.role))
+    )
+    if user is None:
+        raise HTTPException(status_code=404, detail="Rider not found.")
+    if not any(role.role.code == "rider" for role in user.roles):
+        raise HTTPException(status_code=400, detail="This user does not have rider access.")
+
+    if payload.is_platform_rider:
+        user.rider_work_mode = "platform"
+    elif user.rider_work_mode == "platform":
+        user.rider_work_mode = "freelance"
+    await db.commit()
+    return ApiResponse(
+        message="Rider platform status updated successfully.",
+        data=AdminRiderPlatformStatusResponse(
+            id=user.id, full_name=user.full_name, rider_work_mode=user.rider_work_mode
         ),
     )
 

@@ -27,6 +27,8 @@ from app.modules.orders.schemas import (
     RiderSummaryResponse,
     UserSnapshot,
 )
+from app.modules.restaurant_settlements.schemas import RestaurantSettlementResponse
+from app.modules.restaurant_settlements.service import RestaurantSettlementService
 from app.modules.rider_dispatch.service import RiderDispatchService
 from app.modules.rider_payouts.service import RiderPayoutService
 
@@ -771,6 +773,12 @@ class OrderService:
             for item in candidates
         ]
 
+    async def list_merchant_settlements(self, merchant_user_id: int) -> list[RestaurantSettlementResponse]:
+        restaurant_id = await self._get_active_merchant_restaurant_id(merchant_user_id)
+        if restaurant_id is None:
+            return []
+        return await RestaurantSettlementService(self.session).list_for_restaurant(restaurant_id)
+
     async def update_merchant_order_status(
         self,
         merchant_user_id: int,
@@ -828,6 +836,12 @@ class OrderService:
             except Exception:
                 logging.getLogger("yummy.order").exception(
                     "Failed to compute rider payout for order %s", order.id
+                )
+            try:
+                await RestaurantSettlementService(self.session).compute_settlement_for_order(order)
+            except Exception:
+                logging.getLogger("yummy.order").exception(
+                    "Failed to compute restaurant settlement for order %s", order.id
                 )
 
         if new_status != previous_status:
@@ -902,7 +916,7 @@ class OrderService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rider not found.")
         
         is_private_rider = self._user_has_rider_access(rider, restaurant_id)
-        if not is_private_rider and rider.rider_work_mode != "freelance":
+        if not is_private_rider and rider.rider_work_mode not in {"freelance", "platform"}:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Selected rider is not assigned to this restaurant.",
@@ -910,7 +924,7 @@ class OrderService:
         if not is_private_rider and not rider.is_accepting_offers:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Selected freelance rider is offline.",
+                detail="Selected rider is offline.",
             )
 
         dispatch_service = RiderDispatchService(self.session)
@@ -948,7 +962,7 @@ class OrderService:
 
         has_restaurant_assignment = self._user_has_rider_access(rider, order.restaurant_id)
         can_claim_open = (
-            rider.rider_work_mode == "freelance"
+            rider.rider_work_mode in {"freelance", "platform"}
             and rider.is_accepting_offers
             and order.rider_assignment_state == "open_unfilled"
             and order.restaurant is not None
@@ -1072,6 +1086,12 @@ class OrderService:
             except Exception:
                 logging.getLogger("yummy.order").exception(
                     "Failed to compute rider payout for order %s", order.id
+                )
+            try:
+                await RestaurantSettlementService(self.session).compute_settlement_for_order(order)
+            except Exception:
+                logging.getLogger("yummy.order").exception(
+                    "Failed to compute restaurant settlement for order %s", order.id
                 )
             order = await self.repo.get_by_id(order_id)
             if order is None:
