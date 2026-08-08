@@ -1,11 +1,11 @@
 import logging
-import math
 from datetime import UTC, datetime
 from fastapi import HTTPException, status
 from sqlalchemy import and_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.geo import haversine_km
 from app.modules.auth.models import User, UserRole
 from app.modules.analytics.service import apply_completed_order_loyalty
 from app.modules.carts.models import Cart, CartItem, CartStatus
@@ -28,6 +28,7 @@ from app.modules.orders.schemas import (
     UserSnapshot,
 )
 from app.modules.rider_dispatch.service import RiderDispatchService
+from app.modules.rider_payouts.service import RiderPayoutService
 
 
 # Explicit, enforced state machine for merchant-driven status changes.
@@ -171,15 +172,6 @@ class OrderService:
             return "preparing"
         return "placed"
 
-    @staticmethod
-    def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-        radius_km = 6371.0
-        phi1, phi2 = math.radians(lat1), math.radians(lat2)
-        d_phi = math.radians(lat2 - lat1)
-        d_lambda = math.radians(lon2 - lon1)
-        a = math.sin(d_phi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(d_lambda / 2) ** 2
-        return radius_km * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-
     # Real-time ETA estimate from the rider's live GPS to whichever stop is
     # next (the restaurant if not yet picked up, the delivery address once
     # it's picked up) — replaces the static "20-30 min" snapshot taken once
@@ -206,7 +198,7 @@ class OrderService:
         if target_lat is None or target_lon is None:
             return None
 
-        distance_km = cls._haversine_km(rider.current_latitude, rider.current_longitude, target_lat, target_lon)
+        distance_km = haversine_km(rider.current_latitude, rider.current_longitude, target_lat, target_lon)
         minutes = (distance_km / cls._AVERAGE_DELIVERY_SPEED_KMH) * 60
         return max(2, round(minutes) + 2)
 
@@ -831,6 +823,12 @@ class OrderService:
                 logging.getLogger("yummy.order").exception(
                     "Failed to update customer loyalty for order %s", order.id
                 )
+            try:
+                await RiderPayoutService(self.session).compute_payout_for_order(order)
+            except Exception:
+                logging.getLogger("yummy.order").exception(
+                    "Failed to compute rider payout for order %s", order.id
+                )
 
         if new_status != previous_status:
             note = reason
@@ -1062,10 +1060,22 @@ class OrderService:
                     "Failed to update customer loyalty for order %s", order.id
                 )
         await self.session.commit()
-        await self.session.refresh(order)
         order = await self.repo.get_by_id(order_id)
         if order is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found.")
+        if previous_status != OrderStatus.delivered:
+            # Re-fetched fresh above (rather than session.refresh(), which
+            # only refreshes column attributes) so .rider/.restaurant are
+            # guaranteed loaded and not stale before computing the payout.
+            try:
+                await RiderPayoutService(self.session).compute_payout_for_order(order)
+            except Exception:
+                logging.getLogger("yummy.order").exception(
+                    "Failed to compute rider payout for order %s", order.id
+                )
+            order = await self.repo.get_by_id(order_id)
+            if order is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found.")
         return self._format_merchant_order_response(order)
 
     async def _get_active_merchant_restaurant_id(self, merchant_user_id: int) -> int | None:
