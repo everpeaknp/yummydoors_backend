@@ -805,6 +805,12 @@ class OrderService:
                 detail=f"Cannot move an order from {previous_status.value} to {new_status.value}.",
             )
 
+        if new_status == OrderStatus.cancelled and order.picked_up_at is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This order has already been picked up by the rider and can no longer be cancelled.",
+            )
+
         completed_without_rider = False
         if new_status == OrderStatus.delivered:
             completed_without_rider = self._validate_merchant_delivery(order, reason=reason)
