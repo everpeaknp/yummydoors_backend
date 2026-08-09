@@ -95,7 +95,6 @@ class CatalogService:
             delivery_eta_max_minutes=restaurant.delivery_eta_max_minutes,
             rider_dispatch_policy=restaurant.rider_dispatch_policy,
             rider_private_offer_timeout_seconds=restaurant.rider_private_offer_timeout_seconds,
-            rider_preferred_offer_timeout_seconds=restaurant.rider_preferred_offer_timeout_seconds,
             rider_open_offer_timeout_seconds=restaurant.rider_open_offer_timeout_seconds,
             sort_rank=restaurant.sort_rank,
             is_featured=restaurant.is_featured,

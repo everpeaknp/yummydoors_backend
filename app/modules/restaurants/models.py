@@ -47,7 +47,6 @@ class Restaurant(Base, TimestampMixin):
     delivery_eta_max_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     rider_dispatch_policy: Mapped[str] = mapped_column(String(32), default="ranked", nullable=False)
     rider_private_offer_timeout_seconds: Mapped[int] = mapped_column(Integer, default=60, nullable=False)
-    rider_preferred_offer_timeout_seconds: Mapped[int] = mapped_column(Integer, default=180, nullable=False)
     rider_open_offer_timeout_seconds: Mapped[int] = mapped_column(Integer, default=300, nullable=False)
     # Platform's cut of this restaurant's item subtotal per order, as a
     # percent (15.0 = 15%). Defaults to the platform-wide standard rate but

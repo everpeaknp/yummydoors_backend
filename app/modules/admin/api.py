@@ -157,9 +157,9 @@ async def update_rider_platform_status(
     """Grants or revokes "platform rider" status — a rider directly
     onboarded by the platform itself (not tied to any one restaurant), used
     as the guaranteed dispatch fallback when a restaurant has no private
-    team and no preferred/open rider is available. Deliberately
-    admin-only: unlike freelance <-> assigned (self-service), this isn't
-    something a rider should be able to grant themselves."""
+    team and no open rider is available. Deliberately admin-only: unlike
+    freelance <-> assigned (self-service), this isn't something a rider
+    should be able to grant themselves."""
     user = await db.scalar(
         select(User).where(User.id == user_id).options(selectinload(User.roles).selectinload(UserRole.role))
     )
@@ -279,7 +279,6 @@ def _build_restaurant_response(restaurant: Restaurant) -> AdminRestaurantRespons
         delivery_eta_max_minutes=restaurant.delivery_eta_max_minutes,
         rider_dispatch_policy=restaurant.rider_dispatch_policy,
         rider_private_offer_timeout_seconds=restaurant.rider_private_offer_timeout_seconds,
-        rider_preferred_offer_timeout_seconds=restaurant.rider_preferred_offer_timeout_seconds,
         rider_open_offer_timeout_seconds=restaurant.rider_open_offer_timeout_seconds,
         sort_rank=restaurant.sort_rank,
         is_featured=restaurant.is_featured,

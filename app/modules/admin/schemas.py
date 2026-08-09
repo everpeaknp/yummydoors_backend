@@ -99,7 +99,6 @@ class AdminRestaurantBase(BaseModel):
     delivery_eta_max_minutes: int | None = None
     rider_dispatch_policy: str = "ranked"
     rider_private_offer_timeout_seconds: int = 60
-    rider_preferred_offer_timeout_seconds: int = 180
     rider_open_offer_timeout_seconds: int = 300
     sort_rank: int = 0
     is_featured: bool = False
@@ -132,7 +131,6 @@ class AdminRestaurantUpdate(BaseModel):
     delivery_eta_max_minutes: int | None = None
     rider_dispatch_policy: str | None = None
     rider_private_offer_timeout_seconds: int | None = None
-    rider_preferred_offer_timeout_seconds: int | None = None
     rider_open_offer_timeout_seconds: int | None = None
     sort_rank: int | None = None
     is_featured: bool | None = None
@@ -162,7 +160,6 @@ class AdminRestaurantResponse(BaseModel):
     delivery_eta_max_minutes: int | None = None
     rider_dispatch_policy: str = "ranked"
     rider_private_offer_timeout_seconds: int = 60
-    rider_preferred_offer_timeout_seconds: int = 180
     rider_open_offer_timeout_seconds: int = 300
     sort_rank: int
     is_featured: bool

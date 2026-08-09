@@ -69,20 +69,6 @@ def test_offline_private_rider_still_receives_assigned_restaurant_offers():
     assert candidate.assignment_type == "rider_private"
 
 
-def test_preferred_relationship_is_treated_as_preferred_tier():
-    service = RiderDispatchService(None)  # type: ignore[arg-type]
-    preferred_assignment = _assignment(9, "rider_preferred")
-
-    candidate = service._build_candidate(
-        _rider(accepting=True, assignments=[preferred_assignment]),
-        _restaurant(),
-        None,
-    )
-
-    assert candidate is not None
-    assert candidate.assignment_type == "rider_preferred"
-
-
 def test_rider_order_response_exposes_targeted_offer_metadata():
     response = MerchantOrderResponse(
         id=1,

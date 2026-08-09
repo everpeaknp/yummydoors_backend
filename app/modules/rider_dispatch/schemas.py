@@ -21,7 +21,7 @@ class RiderDispatchCandidateResponse(BaseModel):
 
 class RiderInvitationCreateRequest(BaseModel):
     invited_email: str = Field(min_length=3, max_length=255)
-    invitation_type: str = Field(default="private", pattern="^(private|preferred)$")
+    invitation_type: str = Field(default="private", pattern="^(private)$")
     notes: str | None = Field(default=None, max_length=1000)
 
 

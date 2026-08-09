@@ -42,7 +42,7 @@ class RiderPayoutService:
         without double-charging."""
         if order.rider_user_id is None or order.rider is None:
             return None
-        # Private/preferred riders are employed by the restaurant and paid
+        # Private riders are employed by the restaurant and paid
         # directly by them — the platform has nothing to pay out here.
         # Freelance (open pool) and platform-onboarded riders both do
         # platform-brokered gig work and get paid the same way.

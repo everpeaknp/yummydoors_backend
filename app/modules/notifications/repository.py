@@ -380,10 +380,8 @@ class NotificationRepository:
                     [
                         "rider",
                         "rider_private",
-                        "rider_preferred",
                         "rider_open",
                         "private_rider",
-                        "preferred_rider",
                         "open_rider",
                     ]
                 ),

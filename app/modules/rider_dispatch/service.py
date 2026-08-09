@@ -194,7 +194,7 @@ class RiderDispatchService:
             select(RestaurantUserAssignment).where(
                 RestaurantUserAssignment.restaurant_id == restaurant_id,
                 RestaurantUserAssignment.user_id == rider_user_id,
-                RestaurantUserAssignment.assignment_type.in_({"rider_private", "rider_preferred", "private_rider", "preferred_rider"}),
+                RestaurantUserAssignment.assignment_type.in_({"rider_private", "private_rider"}),
             )
         )
         if assignment is None:
@@ -232,7 +232,7 @@ class RiderDispatchService:
         if invitation.invited_user_id is None and invitation.invited_email.lower() != (user.email or "").lower():
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This invitation is not for your account.")
 
-        assignment_type = "rider_private" if invitation.invitation_type == "private" else "rider_preferred"
+        assignment_type = "rider_private"
         existing_assignment = await self.session.execute(
             select(RestaurantUserAssignment).where(
                 RestaurantUserAssignment.user_id == user.id,
@@ -319,7 +319,7 @@ class RiderDispatchService:
         restaurant = order.restaurant
         candidates = await self._dispatch_candidates_for_order(order, restaurant)
         if not candidates:
-            # Every tier (private -> preferred -> open) has now been offered
+            # Every tier (private -> open -> platform) has now been offered
             # and expired/rejected with nobody left to try — previously this
             # just sat as "open_unfilled" forever with no signal to anyone.
             # Only fire once per exhaustion, not on every repeat call once
@@ -344,7 +344,19 @@ class RiderDispatchService:
             return self._build_offer_response(pending_offers[0])
 
         is_private_only = restaurant.rider_dispatch_policy == "private_only"
-        selected_candidates = candidates if is_private_only else candidates[:1]
+        top_tier = candidates[0].assignment_type
+        if is_private_only or top_tier == "rider_private":
+            # Restaurant's own team: broadcast to everyone when private_only,
+            # otherwise offer the nearest rider first and only fall through
+            # to the next-nearest as offers expire/get rejected.
+            selected_candidates = candidates if is_private_only else candidates[:1]
+        else:
+            # Open pool and platform tiers are a marketplace, not a queue:
+            # every eligible rider in that tier sees the job at once
+            # (inDrive-style "here's a job, who wants it"), whoever accepts
+            # first gets it — accept_offer already cancels every other
+            # pending offer for this order the instant one is accepted.
+            selected_candidates = [candidate for candidate in candidates if candidate.assignment_type == top_tier]
         round_number = order.rider_assignment_round + 1
         now = datetime.now(UTC)
         created_offers: list[OrderDispatchOffer] = []
@@ -766,7 +778,7 @@ class RiderDispatchService:
                     continue
                 ranked.append(candidate)
 
-        tier_order = {"rider_private": 0, "rider_preferred": 1, "open": 2, "platform": 3}
+        tier_order = {"rider_private": 0, "open": 1, "platform": 2}
         return sorted(
             ranked,
             key=lambda item: (
@@ -808,8 +820,6 @@ class RiderDispatchService:
         }
         if assignment_types.intersection({"rider_private", "private_rider"}):
             return "rider_private"
-        if assignment_types.intersection({"rider_preferred", "preferred_rider"}):
-            return "rider_preferred"
         if "rider" not in {role.role.code for role in user.roles}:
             return None
         # Platform-onboarded riders are the guaranteed last-resort fallback
@@ -858,8 +868,6 @@ class RiderDispatchService:
     def _timeout_for_tier(self, restaurant: Restaurant, tier: str) -> int:
         if tier == "rider_private":
             return restaurant.rider_private_offer_timeout_seconds
-        if tier == "rider_preferred":
-            return restaurant.rider_preferred_offer_timeout_seconds
         if tier == "platform":
             return self.PLATFORM_TIER_OFFER_TIMEOUT_SECONDS
         return restaurant.rider_open_offer_timeout_seconds
