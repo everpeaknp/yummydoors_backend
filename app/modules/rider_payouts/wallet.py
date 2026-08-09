@@ -88,6 +88,42 @@ class WalletService:
         await self.session.refresh(wallet)
         return wallet
 
+    async def admin_debit(
+        self, *, rider_user_id: int, amount: float, admin_user_id: int, note: str
+    ) -> RiderWallet:
+        """Admin-initiated decrement — correcting a mistaken top-up, manual
+        commission recovery, etc. Distinct from debit_commission (which is
+        the automatic COD-delivery deduction and always carries an
+        order_id) so the two are never confused in the transaction log."""
+        wallet = await self.get_or_create_wallet(rider_user_id)
+        wallet.balance = round(wallet.balance - amount, 2)
+        self.session.add(
+            RiderWalletTransaction(
+                wallet_id=wallet.id,
+                order_id=None,
+                kind="debit",
+                amount=amount,
+                balance_after=wallet.balance,
+                note=note,
+                created_by_user_id=admin_user_id,
+            )
+        )
+        await self.session.commit()
+        await self.session.refresh(wallet)
+        return wallet
+
+    async def admin_adjust(
+        self, *, rider_user_id: int, amount: float, admin_user_id: int, note: str | None
+    ) -> RiderWalletResponse:
+        """Single entry point for the admin wallet-adjustment UI — positive
+        amount credits, negative debits. Schema-level validation
+        (AdminWalletAdjustRequest) already requires a note for debits."""
+        if amount > 0:
+            await self.credit_top_up(rider_user_id=rider_user_id, amount=amount, admin_user_id=admin_user_id, note=note)
+        else:
+            await self.admin_debit(rider_user_id=rider_user_id, amount=abs(amount), admin_user_id=admin_user_id, note=note or "")
+        return await self.get_wallet_response(rider_user_id)
+
     async def get_wallet_response(self, rider_user_id: int) -> RiderWalletResponse:
         wallet = await self.session.scalar(
             select(RiderWallet)
@@ -140,6 +176,3 @@ class WalletService:
             for w in result.scalars().all()
         ]
 
-    async def admin_top_up(self, *, rider_user_id: int, amount: float, admin_user_id: int, note: str | None) -> RiderWalletResponse:
-        await self.credit_top_up(rider_user_id=rider_user_id, amount=amount, admin_user_id=admin_user_id, note=note)
-        return await self.get_wallet_response(rider_user_id)

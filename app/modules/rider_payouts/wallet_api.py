@@ -8,7 +8,7 @@ from app.modules.auth.deps import get_current_user, require_role
 from app.modules.auth.models import User
 from app.modules.rider_payouts.wallet import WalletService
 from app.modules.rider_payouts.wallet_schemas import (
-    AdminWalletTopUpRequest,
+    AdminWalletAdjustRequest,
     RiderWalletResponse,
     RiderWalletTransactionResponse,
 )
@@ -65,17 +65,20 @@ async def list_admin_rider_wallet_transactions(rider_user_id: int, db: AsyncSess
 
 
 @router.post(
-    "/admin/rider-wallets/{rider_user_id}/top-up",
+    "/admin/rider-wallets/{rider_user_id}/adjust",
     response_model=RiderWalletResponse,
     dependencies=[Depends(require_role(["super_admin", "ops_admin"]))],
 )
-async def top_up_rider_wallet(
+async def adjust_rider_wallet(
     rider_user_id: int,
-    payload: AdminWalletTopUpRequest,
+    payload: AdminWalletAdjustRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Positive amount credits the wallet (rider topped up), negative
+    debits it (correcting a mistaken credit, manual recovery, etc — the
+    schema already requires a note for the negative case)."""
     service = WalletService(db)
-    return await service.admin_top_up(
+    return await service.admin_adjust(
         rider_user_id=rider_user_id, amount=payload.amount, admin_user_id=current_user.id, note=payload.note
     )
