@@ -11,6 +11,8 @@ from app.core.geo import haversine_km
 from app.modules.orders.models import Order
 from app.modules.rider_payouts.models import RiderPayout
 from app.modules.rider_payouts.schemas import RiderPayoutResponse
+from app.modules.rider_payouts.tier import get_rider_tier
+from app.modules.rider_payouts.wallet import WalletService
 
 
 class RiderPayoutService:
@@ -21,8 +23,6 @@ class RiderPayoutService:
     BASE_FARE = 20.0
     BASE_FARE_COVERS_KM = 1.0
     PER_KM_RATE = 20.0
-    # Matches Pathao's published rider-commission split (rider keeps ~80%).
-    RIDER_COMMISSION_RATE_PERCENT = 20.0
 
     def __init__(self, session: AsyncSession):
         self.session = session
@@ -63,7 +63,9 @@ class RiderPayoutService:
             restaurant.latitude, restaurant.longitude, order.delivery_latitude, order.delivery_longitude
         )
         base_fare, distance_fare, gross_fare = self.calculate_fare(distance_km)
-        commission_amount = round(gross_fare * (self.RIDER_COMMISSION_RATE_PERCENT / 100), 2)
+        tier = await get_rider_tier(self.session, order.rider_user_id)
+        commission_rate = tier.commission_rate_percent
+        commission_amount = round(gross_fare * (commission_rate / 100), 2)
         payout_amount = round(gross_fare - commission_amount, 2)
 
         payout = RiderPayout(
@@ -74,7 +76,7 @@ class RiderPayoutService:
             base_fare=base_fare,
             distance_fare=round(distance_fare, 2),
             gross_fare=round(gross_fare, 2),
-            commission_rate_percent=self.RIDER_COMMISSION_RATE_PERCENT,
+            commission_rate_percent=commission_rate,
             commission_amount=commission_amount,
             payout_amount=payout_amount,
             status="pending",
@@ -82,6 +84,18 @@ class RiderPayoutService:
         self.session.add(payout)
         await self.session.commit()
         await self.session.refresh(payout)
+
+        payment_method = (order.payment_method or "cash").strip().lower()
+        if payment_method in {"cash", "cod"}:
+            # The rider already has the customer's cash in hand — the
+            # platform can't collect its commission any other way, so it
+            # comes out of the rider's pre-funded wallet instead.
+            await WalletService(self.session).debit_commission(
+                rider_user_id=order.rider_user_id,
+                amount=commission_amount,
+                order_id=order.id,
+                note=f"Commission for order {order.order_number}",
+            )
         return payout
 
     async def list_for_rider(self, rider_user_id: int) -> list[RiderPayoutResponse]:

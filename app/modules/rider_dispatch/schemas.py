@@ -17,6 +17,10 @@ class RiderDispatchCandidateResponse(BaseModel):
     distance_km: float | None = None
     current_latitude: float | None = None
     current_longitude: float | None = None
+    tier: str = "new"
+    tier_label: str = "New"
+    dispatch_priority: int = 2
+    can_accept_offers: bool = True
 
 
 class RiderInvitationCreateRequest(BaseModel):
