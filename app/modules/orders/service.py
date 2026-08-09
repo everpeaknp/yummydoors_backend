@@ -824,26 +824,6 @@ class OrderService:
             order.cancelled_at = now
             order.rider_offer_expires_at = None
 
-        if new_status == OrderStatus.delivered and previous_status != OrderStatus.delivered:
-            try:
-                await apply_completed_order_loyalty(self.session, order)
-            except Exception:
-                logging.getLogger("yummy.order").exception(
-                    "Failed to update customer loyalty for order %s", order.id
-                )
-            try:
-                await RiderPayoutService(self.session).compute_payout_for_order(order)
-            except Exception:
-                logging.getLogger("yummy.order").exception(
-                    "Failed to compute rider payout for order %s", order.id
-                )
-            try:
-                await RestaurantSettlementService(self.session).compute_settlement_for_order(order)
-            except Exception:
-                logging.getLogger("yummy.order").exception(
-                    "Failed to compute restaurant settlement for order %s", order.id
-                )
-
         if new_status != previous_status:
             note = reason
             if completed_without_rider and not note:
@@ -859,8 +839,50 @@ class OrderService:
                 )
             )
 
+        # Commit the actual status change first. Loyalty/payout/settlement
+        # below are best-effort side effects — if one throws (a pending
+        # migration not yet applied, a data edge case, etc.) it must not be
+        # able to poison this transaction and take the status change down
+        # with it, which is exactly what happened when these ran before the
+        # commit: one failed statement aborted the whole transaction and the
+        # OrderStatusEvent insert failed right along with it.
         await self.session.commit()
         await self.session.refresh(order)
+
+        if new_status == OrderStatus.delivered and previous_status != OrderStatus.delivered:
+            # order_id is this method's own int parameter — safe to log and
+            # re-fetch with even after a rollback(). rollback() expires
+            # every attribute on every object in the session, so `order`
+            # itself must be re-fetched before being handed to the next
+            # service below, or accessing any of its attributes mid-async
+            # would trigger a lazy reload that crashes (MissingGreenlet).
+            try:
+                await apply_completed_order_loyalty(self.session, order)
+            except Exception:
+                await self.session.rollback()
+                logging.getLogger("yummy.order").exception(
+                    "Failed to update customer loyalty for order %s", order_id
+                )
+                order = await self.repo.get_by_id(order_id)
+            try:
+                if order is not None:
+                    await RiderPayoutService(self.session).compute_payout_for_order(order)
+            except Exception:
+                await self.session.rollback()
+                logging.getLogger("yummy.order").exception(
+                    "Failed to compute rider payout for order %s", order_id
+                )
+                order = await self.repo.get_by_id(order_id)
+            try:
+                if order is not None:
+                    await RestaurantSettlementService(self.session).compute_settlement_for_order(order)
+            except Exception:
+                await self.session.rollback()
+                logging.getLogger("yummy.order").exception(
+                    "Failed to compute restaurant settlement for order %s", order_id
+                )
+                order = await self.repo.get_by_id(order_id)
+
         order = await self.repo.get_by_id(order_id)
         if order is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found.")
@@ -908,14 +930,22 @@ class OrderService:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cancelled orders cannot be assigned.")
         if order.status == OrderStatus.delivered:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Delivered orders cannot be assigned.")
-        if order.restaurant and order.restaurant.rider_dispatch_policy == "private_only":
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Private rider dispatch is enabled. The order is sent to the private rider team automatically.")
 
         rider = await self._load_user_with_roles(rider_user_id)
         if rider is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rider not found.")
-        
+
         is_private_rider = self._user_has_rider_access(rider, restaurant_id)
+        # private_only blocks manual assignment of anyone OTHER than the
+        # restaurant's own private team — it must not block assigning a
+        # private-team rider, or a merchant can never manually recover an
+        # order once automatic dispatch has stalled (e.g. no private rider
+        # was online at checkout time).
+        if not is_private_rider and order.restaurant and order.restaurant.rider_dispatch_policy == "private_only":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Private rider dispatch is enabled. Only riders on your private team can be assigned.",
+            )
         if not is_private_rider and rider.rider_work_mode not in {"freelance", "platform"}:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -1066,13 +1096,10 @@ class OrderService:
         order.picked_up_at = order.picked_up_at or now
         order.delivered_at = now
         order.status = OrderStatus.delivered
-        if previous_status != OrderStatus.delivered:
-            try:
-                await apply_completed_order_loyalty(self.session, order)
-            except Exception:
-                logging.getLogger("yummy.order").exception(
-                    "Failed to update customer loyalty for order %s", order.id
-                )
+        # Commit the actual status change first — loyalty/payout/settlement
+        # below are best-effort side effects and must not be able to poison
+        # this transaction (and take the status change down with it) if one
+        # of them throws.
         await self.session.commit()
         order = await self.repo.get_by_id(order_id)
         if order is None:
@@ -1082,16 +1109,29 @@ class OrderService:
             # only refreshes column attributes) so .rider/.restaurant are
             # guaranteed loaded and not stale before computing the payout.
             try:
-                await RiderPayoutService(self.session).compute_payout_for_order(order)
+                await apply_completed_order_loyalty(self.session, order)
             except Exception:
+                await self.session.rollback()
                 logging.getLogger("yummy.order").exception(
-                    "Failed to compute rider payout for order %s", order.id
+                    "Failed to update customer loyalty for order %s", order_id
                 )
+                order = await self.repo.get_by_id(order_id)
             try:
-                await RestaurantSettlementService(self.session).compute_settlement_for_order(order)
+                if order is not None:
+                    await RiderPayoutService(self.session).compute_payout_for_order(order)
             except Exception:
+                await self.session.rollback()
                 logging.getLogger("yummy.order").exception(
-                    "Failed to compute restaurant settlement for order %s", order.id
+                    "Failed to compute rider payout for order %s", order_id
+                )
+                order = await self.repo.get_by_id(order_id)
+            try:
+                if order is not None:
+                    await RestaurantSettlementService(self.session).compute_settlement_for_order(order)
+            except Exception:
+                await self.session.rollback()
+                logging.getLogger("yummy.order").exception(
+                    "Failed to compute restaurant settlement for order %s", order_id
                 )
             order = await self.repo.get_by_id(order_id)
             if order is None:
