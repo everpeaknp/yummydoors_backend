@@ -9,6 +9,7 @@ from app.modules.auth.models import User
 from app.modules.rider_payouts.models import RiderPayout
 from app.modules.rider_payouts.schemas import RiderPayoutResponse
 from app.modules.rider_payouts.service import RiderPayoutService
+from app.modules.rider_payouts.review import RiderReviewService
 from app.modules.rider_payouts.tier import RIDER_TIERS, get_lifetime_delivery_count, tier_for_delivery_count
 from app.modules.rider_payouts.wallet import WalletService
 
@@ -27,6 +28,8 @@ class RiderProfileResponse(BaseModel):
     paidEarnings: float
     walletBalance: float | None = None
     canAcceptOffers: bool = True
+    averageRating: float | None = None
+    totalReviews: int = 0
     recentDeliveries: list[RiderPayoutResponse] = []
 
 
@@ -63,6 +66,7 @@ class RiderProfileService:
             can_accept_offers = await wallet_service.can_accept_offers(rider.id)
 
         recent = await RiderPayoutService(self.session).list_for_rider(rider.id)
+        rating_summary = await RiderReviewService(self.session).get_rating_summary(rider.id)
 
         return RiderProfileResponse(
             riderUserId=rider.id,
@@ -78,5 +82,7 @@ class RiderProfileService:
             paidEarnings=round(paid_earnings, 2),
             walletBalance=wallet_balance,
             canAcceptOffers=can_accept_offers,
+            averageRating=rating_summary.averageRating,
+            totalReviews=rating_summary.totalReviews,
             recentDeliveries=recent[:20],
         )
