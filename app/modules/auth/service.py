@@ -27,7 +27,6 @@ from app.modules.auth.schemas import (
     RiderLocationUpdateRequest,
     UserLocationUpdateRequest,
     RiderAvailabilityUpdateRequest,
-    RiderWorkModeUpdateRequest,
     UserSummary,
 )
 from app.modules.integrations.pos.lookup import lookup_pos_link_status
@@ -541,20 +540,6 @@ class AuthService:
             await self._broadcast_rider_location_to_active_orders(
                 user, payload.latitude, payload.longitude, user.current_location_updated_at
             )
-        return await self._build_user_summary(user)
-
-    async def update_rider_work_mode(
-        self,
-        user: User,
-        payload: RiderWorkModeUpdateRequest,
-        request: Request | None = None,
-    ) -> UserSummary:
-        role_codes = {item.role.code for item in user.roles}
-        if "rider" not in role_codes:
-            raise HTTPException(status_code=403, detail="Rider access is required.")
-
-        user.rider_work_mode = payload.rider_work_mode
-        await self.repo.commit()
         return await self._build_user_summary(user)
 
     async def update_rider_availability(

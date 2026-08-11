@@ -815,10 +815,10 @@ class RiderDispatchService:
         )
 
     async def _load_gig_rider_extras(self, users: list[User]) -> tuple[dict[int, RiderTier], dict[int, bool]]:
-        """Batch tier + per-rider wallet eligibility for every freelance/
-        platform candidate in one pass, rather than querying per candidate.
-        Private riders are never tiered or wallet-gated (skipped)."""
-        gig_user_ids = [u.id for u in users if u.rider_work_mode in {"freelance", "platform"}]
+        """Batch tier + per-rider wallet eligibility for every platform-tier
+        candidate in one pass, rather than querying per candidate. Private
+        riders are never tiered or wallet-gated (skipped)."""
+        gig_user_ids = [u.id for u in users if u.rider_work_mode == "platform"]
         tiers = await get_tiers_for_riders(self.session, gig_user_ids)
         wallet_service = WalletService(self.session)
         eligibility: dict[int, bool] = {}
@@ -838,19 +838,19 @@ class RiderDispatchService:
         if assignment_type is None:
             return None
         # Freelance/platform dispatch is paused platform-wide (see
-        # Settings.freelance_dispatch_enabled) until COD cash settlement
+        # Settings.gig_dispatch_enabled) until COD cash settlement
         # between gig riders and restaurants is built. Private (restaurant-
         # employed) riders are unaffected.
-        if assignment_type in {"open", "platform"} and not settings.freelance_dispatch_enabled:
+        if assignment_type in {"open", "platform"} and not settings.gig_dispatch_enabled:
             return None
         if user.rider_work_mode == "assigned" and assignment_type == "open":
             return None
         if assignment_type in {"open", "platform"} and not user.is_accepting_offers:
             return None
-        # A freelance/platform rider whose wallet has run out (unpaid COD
-        # commission) can't be offered — or manually assigned — new work
-        # until they top up. Private riders are paid by the restaurant
-        # directly and are never wallet-gated.
+        # A gig rider (open pool or platform-tier) whose wallet has run out
+        # (unpaid COD commission) can't be offered — or manually assigned —
+        # new work until they top up. Private riders are paid by the
+        # restaurant directly and are never wallet-gated.
         if assignment_type in {"open", "platform"} and not can_accept_offers:
             return None
         resolved_tier = tier or tier_for_delivery_count(0)
@@ -885,12 +885,10 @@ class RiderDispatchService:
             return None
         # Platform-onboarded riders are the guaranteed last-resort fallback
         # — tried after the open pool, not instead of it, since an
-        # opportunistic nearby freelancer is still cheaper/faster than
+        # opportunistic nearby open-pool rider is still cheaper/faster than
         # paging the dedicated platform pool.
         if user.rider_work_mode == "platform":
             return "platform"
-        if user.rider_work_mode == "freelance":
-            return "open"
         if assignment_types.intersection({"rider", "rider_open", "open_rider"}):
             return "open"
         return None

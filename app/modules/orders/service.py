@@ -953,15 +953,15 @@ class OrderService:
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Private rider dispatch is enabled. Only riders on your private team can be assigned.",
             )
-        if not is_private_rider and rider.rider_work_mode not in {"freelance", "platform"}:
+        if not is_private_rider and rider.rider_work_mode != "platform":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Selected rider is not assigned to this restaurant.",
             )
-        if not is_private_rider and not settings.freelance_dispatch_enabled:
+        if not is_private_rider and not settings.gig_dispatch_enabled:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Freelance and platform rider dispatch is temporarily paused. Only your private team can be assigned.",
+                detail="Platform rider dispatch is temporarily paused. Only your private team can be assigned.",
             )
         if not is_private_rider and not rider.is_accepting_offers:
             raise HTTPException(
@@ -1004,7 +1004,8 @@ class OrderService:
 
         has_restaurant_assignment = self._user_has_rider_access(rider, order.restaurant_id)
         can_claim_open = (
-            rider.rider_work_mode in {"freelance", "platform"}
+            rider.rider_work_mode == "platform"
+            and settings.gig_dispatch_enabled
             and rider.is_accepting_offers
             and order.rider_assignment_state == "open_unfilled"
             and order.restaurant is not None

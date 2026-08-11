@@ -5,11 +5,12 @@ import pytest
 from fastapi import HTTPException
 
 import app.main  # noqa: F401 — registers the full SQLAlchemy mapper graph.
+from app.core.config import settings
 from app.modules.orders.models import Order, OrderStatus
 from app.modules.orders.service import OrderService
 
 
-def _rider(*, id=17, work_mode="freelance", accepting=True, roles=("rider",)):
+def _rider(*, id=17, work_mode="platform", accepting=True, roles=("rider",)):
     return SimpleNamespace(
         id=id,
         rider_work_mode=work_mode,
@@ -120,6 +121,7 @@ async def test_rider_claim_conflict_when_concurrently_claimed(monkeypatch):
     rider already claimed the order first (rowcount == 0 because
     rider_user_id is no longer NULL). This must surface as a 409, not a
     silent double-assignment."""
+    monkeypatch.setattr(settings, "gig_dispatch_enabled", True)
     order = _order()
     session = _FakeSession(order, update_rowcount=0)
     service = OrderService(session)
@@ -146,6 +148,7 @@ async def test_rider_claim_conflict_when_concurrently_claimed(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_rider_claim_succeeds_when_update_wins_the_race(monkeypatch):
+    monkeypatch.setattr(settings, "gig_dispatch_enabled", True)
     order = _order()
     session = _FakeSession(order, update_rowcount=1)
     service = OrderService(session)

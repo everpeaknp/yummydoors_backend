@@ -63,15 +63,6 @@ class UserLocationUpdateRequest(BaseModel):
     longitude: float = Field(ge=-180, le=180)
 
 
-class RiderWorkModeUpdateRequest(BaseModel):
-    # Self-service only covers freelance <-> assigned. "platform" (a rider
-    # directly onboarded by the platform itself, not tied to any one
-    # restaurant — the guaranteed fallback tier) is an admin-granted
-    # designation, not something a rider can toggle on themselves — see
-    # AdminRiderPlatformStatusUpdateRequest.
-    rider_work_mode: str = Field(pattern="^(freelance|assigned)$")
-
-
 class RiderAvailabilityUpdateRequest(BaseModel):
     is_accepting_offers: bool
 
@@ -118,7 +109,7 @@ class UserSummary(BaseModel):
     current_latitude: float | None = None
     current_longitude: float | None = None
     current_location_updated_at: datetime | None = None
-    rider_work_mode: str = "freelance"
+    rider_work_mode: str = "assigned"
     is_accepting_offers: bool = False
     status: str
     is_verified: bool

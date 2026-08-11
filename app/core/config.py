@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     # RiderPayoutService / RestaurantSettlementService COD comments). Off
     # by default until that settlement flow is built — private (restaurant-
     # employed) rider dispatch is completely unaffected either way.
-    freelance_dispatch_enabled: bool = False
+    gig_dispatch_enabled: bool = False
 
     jwt_secret_key: str
     jwt_algorithm: str = "HS256"

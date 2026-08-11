@@ -143,7 +143,7 @@ class RiderSummaryResponse(BaseModel):
     phone: str | None = None
     avatar_url: str | None = None
     assignment_type: str = "open"
-    rider_work_mode: str = "freelance"
+    rider_work_mode: str = "assigned"
     is_accepting_offers: bool = False
     busy: bool = False
     distance_km: float | None = None

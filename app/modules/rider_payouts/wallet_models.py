@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 
 class RiderWallet(Base, TimestampMixin):
-    """One row per freelance/platform rider. Balance is debited
+    """One row per platform-tier rider. Balance is debited
     automatically when a COD delivery's commission can't be collected any
     other way (the rider already has the customer's cash in hand), and
     credited manually by an admin once the rider pays what they owe outside

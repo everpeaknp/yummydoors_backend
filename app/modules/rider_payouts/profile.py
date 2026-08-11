@@ -60,7 +60,7 @@ class RiderProfileService:
 
         wallet_balance: float | None = None
         can_accept_offers = True
-        if rider.rider_work_mode in {"freelance", "platform"}:
+        if rider.rider_work_mode == "platform":
             wallet_service = WalletService(self.session)
             wallet_balance = await wallet_service.get_balance(rider.id)
             can_accept_offers = await wallet_service.can_accept_offers(rider.id)

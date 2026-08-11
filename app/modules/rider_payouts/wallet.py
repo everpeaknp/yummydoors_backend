@@ -39,9 +39,9 @@ class WalletService:
         return wallet.balance if wallet is not None else 0.0
 
     async def can_accept_offers(self, rider_user_id: int) -> bool:
-        """Riders who've never had a wallet row (private/platform riders,
-        or a freelancer who's never had a COD delivery yet) are not gated —
-        only an actual negative/zero balance blocks new offers."""
+        """Riders who've never had a wallet row (private riders, or a
+        platform-tier rider who's never had a COD delivery yet) are not
+        gated — only an actual negative/zero balance blocks new offers."""
         wallet = await self.session.scalar(
             select(RiderWallet).where(RiderWallet.rider_user_id == rider_user_id)
         )

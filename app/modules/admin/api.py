@@ -157,9 +157,8 @@ async def update_rider_platform_status(
     """Grants or revokes "platform rider" status — a rider directly
     onboarded by the platform itself (not tied to any one restaurant), used
     as the guaranteed dispatch fallback when a restaurant has no private
-    team and no open rider is available. Deliberately admin-only: unlike
-    freelance <-> assigned (self-service), this isn't something a rider
-    should be able to grant themselves."""
+    team. Admin-only, on purpose: the platform tier is the only open-pool
+    dispatch tier now, and a rider can't self-vet themselves into it."""
     user = await db.scalar(
         select(User).where(User.id == user_id).options(selectinload(User.roles).selectinload(UserRole.role))
     )
@@ -171,7 +170,7 @@ async def update_rider_platform_status(
     if payload.is_platform_rider:
         user.rider_work_mode = "platform"
     elif user.rider_work_mode == "platform":
-        user.rider_work_mode = "freelance"
+        user.rider_work_mode = "assigned"
     await db.commit()
     return ApiResponse(
         message="Rider platform status updated successfully.",

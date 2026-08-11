@@ -16,8 +16,8 @@ if TYPE_CHECKING:
 
 
 class RiderPayout(Base, TimestampMixin):
-    """One row per delivered order for a public/freelance (or platform)
-    rider — private restaurant-employed riders are paid directly by the
+    """One row per delivered order for a platform-tier (open-pool) rider —
+    private restaurant-employed riders are paid directly by the
     restaurant and never get a row here. Snapshots the fare inputs
     (distance, rate, commission %) at computation time so a later change to
     the platform's rates doesn't retroactively rewrite historical payouts.
