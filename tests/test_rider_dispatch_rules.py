@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
+from app.core.config import settings
 from app.modules.orders.models import OrderStatus
 from app.modules.orders.schemas import MerchantOrderResponse
 from app.modules.rider_dispatch.service import RiderDispatchService
@@ -53,6 +54,33 @@ def test_offline_freelancer_is_not_an_open_dispatch_candidate():
     )
 
     assert candidate is None
+
+
+def test_freelance_dispatch_disabled_by_default_blocks_online_open_candidate():
+    assert settings.freelance_dispatch_enabled is False
+    service = RiderDispatchService(None)  # type: ignore[arg-type]
+
+    candidate = service._build_candidate(
+        _rider(accepting=True),
+        _restaurant(),
+        None,
+    )
+
+    assert candidate is None
+
+
+def test_freelance_dispatch_enabled_flag_allows_open_candidate(monkeypatch):
+    monkeypatch.setattr(settings, "freelance_dispatch_enabled", True)
+    service = RiderDispatchService(None)  # type: ignore[arg-type]
+
+    candidate = service._build_candidate(
+        _rider(accepting=True),
+        _restaurant(),
+        None,
+    )
+
+    assert candidate is not None
+    assert candidate.assignment_type == "open"
 
 
 def test_offline_private_rider_still_receives_assigned_restaurant_offers():

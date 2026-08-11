@@ -14,6 +14,14 @@ class Settings(BaseSettings):
     database_url: str
     pos_database_url: str | None = None
 
+    # Freelance/platform-tier riders collect COD cash for orders that also
+    # include money owed to the restaurant, with no enforced mechanism yet
+    # to get the restaurant's share back from an anonymous gig rider (see
+    # RiderPayoutService / RestaurantSettlementService COD comments). Off
+    # by default until that settlement flow is built — private (restaurant-
+    # employed) rider dispatch is completely unaffected either way.
+    freelance_dispatch_enabled: bool = False
+
     jwt_secret_key: str
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 30

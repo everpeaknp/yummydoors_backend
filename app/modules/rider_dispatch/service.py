@@ -8,6 +8,7 @@ from sqlalchemy import and_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.config import settings
 from app.core.geo import haversine_km
 from app.modules.auth.models import Role, User, UserRole
 from app.modules.notifications.service import NotificationService
@@ -835,6 +836,12 @@ class RiderDispatchService:
     ) -> RiderDispatchCandidateResponse | None:
         assignment_type = self._candidate_assignment_type(user, restaurant.id)
         if assignment_type is None:
+            return None
+        # Freelance/platform dispatch is paused platform-wide (see
+        # Settings.freelance_dispatch_enabled) until COD cash settlement
+        # between gig riders and restaurants is built. Private (restaurant-
+        # employed) riders are unaffected.
+        if assignment_type in {"open", "platform"} and not settings.freelance_dispatch_enabled:
             return None
         if user.rider_work_mode == "assigned" and assignment_type == "open":
             return None

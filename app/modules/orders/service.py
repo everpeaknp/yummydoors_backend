@@ -5,6 +5,7 @@ from sqlalchemy import and_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.config import settings
 from app.core.geo import haversine_km
 from app.modules.auth.models import User, UserRole
 from app.modules.analytics.service import apply_completed_order_loyalty
@@ -956,6 +957,11 @@ class OrderService:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Selected rider is not assigned to this restaurant.",
+            )
+        if not is_private_rider and not settings.freelance_dispatch_enabled:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Freelance and platform rider dispatch is temporarily paused. Only your private team can be assigned.",
             )
         if not is_private_rider and not rider.is_accepting_offers:
             raise HTTPException(
