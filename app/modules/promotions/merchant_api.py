@@ -4,43 +4,48 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
-from app.modules.auth.deps import require_role
+from app.modules.auth.deps import get_current_user
+from app.modules.auth.models import User
 from app.modules.promotions.repository import PromotionRepository
-from app.modules.promotions.schemas import (
-    PromotionCreateRequest,
-    PromotionResponse,
-    PromotionUpdateRequest,
-    format_promotion_response,
+from app.modules.promotions.schemas import PromotionResponse, format_promotion_response
+from app.modules.promotions.merchant_schemas import (
+    MerchantPromotionCreateRequest,
+    MerchantPromotionUpdateRequest,
 )
+from app.modules.workspaces.repository import WorkspaceRepository
 
-router = APIRouter(prefix="/admin/promotions", tags=["Admin Promotions"])
+router = APIRouter(prefix="/merchant/promotions", tags=["Merchant Promotions"])
 
 
-@router.get(
-    "",
-    response_model=List[PromotionResponse],
-    dependencies=[Depends(require_role(["super_admin", "ops_admin"]))],
-)
-async def list_promotions(
-    restaurant_id: int | None = None,
-    active_only: bool = False,
+async def _get_merchant_restaurant_id(user_id: int, session: AsyncSession) -> int:
+    workspace_repo = WorkspaceRepository(session)
+    restaurant_id = await workspace_repo.get_active_merchant_restaurant_id(user_id)
+    if not restaurant_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Active workspace is not a merchant workspace.",
+        )
+    return restaurant_id
+
+
+@router.get("", response_model=List[PromotionResponse])
+async def list_my_promotions(
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    restaurant_id = await _get_merchant_restaurant_id(current_user.id, db)
     repo = PromotionRepository(db)
-    promotions = await repo.list_all(restaurant_id=restaurant_id, active_only=active_only)
+    promotions = await repo.list_all(restaurant_id=restaurant_id)
     return [format_promotion_response(p) for p in promotions]
 
 
-@router.post(
-    "",
-    response_model=PromotionResponse,
-    status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_role(["super_admin", "ops_admin"]))],
-)
-async def create_promotion(
-    payload: PromotionCreateRequest,
+@router.post("", response_model=PromotionResponse, status_code=status.HTTP_201_CREATED)
+async def create_my_promotion(
+    payload: MerchantPromotionCreateRequest,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    restaurant_id = await _get_merchant_restaurant_id(current_user.id, db)
     repo = PromotionRepository(db)
     existing = await repo.get_by_code(payload.code)
     if existing is not None:
@@ -52,7 +57,7 @@ async def create_promotion(
         discount_value=payload.discountValue,
         max_discount_amount=payload.maxDiscountAmount,
         min_order_amount=payload.minOrderAmount,
-        restaurant_id=payload.restaurantId,
+        restaurant_id=restaurant_id,
         starts_at=payload.startsAt,
         expires_at=payload.expiresAt,
         usage_limit=payload.usageLimit,
@@ -62,19 +67,17 @@ async def create_promotion(
     return format_promotion_response(promotion)
 
 
-@router.patch(
-    "/{promotion_id}",
-    response_model=PromotionResponse,
-    dependencies=[Depends(require_role(["super_admin", "ops_admin"]))],
-)
-async def update_promotion(
+@router.patch("/{promotion_id}", response_model=PromotionResponse)
+async def update_my_promotion(
     promotion_id: int,
-    payload: PromotionUpdateRequest,
+    payload: MerchantPromotionUpdateRequest,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    restaurant_id = await _get_merchant_restaurant_id(current_user.id, db)
     repo = PromotionRepository(db)
     promotion = await repo.get_by_id(promotion_id)
-    if promotion is None:
+    if promotion is None or promotion.restaurant_id != restaurant_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Coupon not found.")
 
     updates = payload.model_dump(exclude_unset=True)
@@ -83,7 +86,6 @@ async def update_promotion(
         "discountValue": "discount_value",
         "maxDiscountAmount": "max_discount_amount",
         "minOrderAmount": "min_order_amount",
-        "restaurantId": "restaurant_id",
         "isActive": "is_active",
         "startsAt": "starts_at",
         "expiresAt": "expires_at",
@@ -96,17 +98,16 @@ async def update_promotion(
     return format_promotion_response(promotion)
 
 
-@router.delete(
-    "/{promotion_id}",
-    dependencies=[Depends(require_role(["super_admin", "ops_admin"]))],
-)
-async def delete_promotion(
+@router.delete("/{promotion_id}")
+async def delete_my_promotion(
     promotion_id: int,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    restaurant_id = await _get_merchant_restaurant_id(current_user.id, db)
     repo = PromotionRepository(db)
     promotion = await repo.get_by_id(promotion_id)
-    if promotion is None:
+    if promotion is None or promotion.restaurant_id != restaurant_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Coupon not found.")
     await repo.delete(promotion)
     return {"message": "Coupon deleted."}

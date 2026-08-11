@@ -1,8 +1,14 @@
+from __future__ import annotations
+
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field, field_validator
 
 from app.modules.promotions.models import PromotionDiscountType
+
+if TYPE_CHECKING:
+    from app.modules.promotions.models import Promotion
 
 
 class PromotionResponse(BaseModel):
@@ -55,3 +61,24 @@ class PromotionUpdateRequest(BaseModel):
     usageLimit: int | None = Field(default=None, ge=1)
     perUserLimit: int | None = Field(default=None, ge=1)
     description: str | None = Field(default=None, max_length=255)
+
+
+def format_promotion_response(promotion: "Promotion") -> PromotionResponse:
+    return PromotionResponse(
+        id=promotion.id,
+        code=promotion.code,
+        discountType=promotion.discount_type,
+        discountValue=promotion.discount_value,
+        maxDiscountAmount=promotion.max_discount_amount,
+        minOrderAmount=promotion.min_order_amount,
+        restaurantId=promotion.restaurant_id,
+        restaurantName=promotion.restaurant.name if promotion.restaurant else None,
+        isActive=promotion.is_active,
+        startsAt=promotion.starts_at,
+        expiresAt=promotion.expires_at,
+        usageLimit=promotion.usage_limit,
+        perUserLimit=promotion.per_user_limit,
+        timesUsed=promotion.times_used,
+        description=promotion.description,
+        createdAt=promotion.created_at,
+    )
