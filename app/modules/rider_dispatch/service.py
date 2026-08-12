@@ -8,7 +8,6 @@ from sqlalchemy import and_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.config import settings
 from app.core.geo import haversine_km
 from app.modules.auth.models import Role, User, UserRole
 from app.modules.notifications.service import NotificationService
@@ -25,8 +24,6 @@ from app.modules.rider_dispatch.schemas import (
     RiderDispatchOfferResponse,
 )
 from app.modules.restaurants.models import Restaurant, RestaurantUserAssignment
-from app.modules.rider_payouts.tier import RiderTier, get_tiers_for_riders, tier_for_delivery_count
-from app.modules.rider_payouts.wallet import WalletService
 from app.modules.workspaces.repository import WorkspaceRepository
 from app.modules.realtime.bus import (
     ORDER_CUSTOMER_CHANNEL,
@@ -294,18 +291,11 @@ class RiderDispatchService:
             .where(User.is_active.is_(True))
         )
         users = result.scalars().unique().all()
-        tiers, eligibility = await self._load_gig_rider_extras(list(users))
         candidates: list[RiderDispatchCandidateResponse] = []
         for user in users:
             if not self._user_is_rider(user):
                 continue
-            candidate = self._build_candidate(
-                user,
-                restaurant,
-                order,
-                tier=tiers.get(user.id),
-                can_accept_offers=eligibility.get(user.id, True),
-            )
+            candidate = self._build_candidate(user, restaurant, order)
             if candidate is not None:
                 candidates.append(candidate)
         return sorted(
@@ -366,14 +356,7 @@ class RiderDispatchService:
             # (inDrive-style "here's a job, who wants it"), whoever accepts
             # first gets it — accept_offer already cancels every other
             # pending offer for this order the instant one is accepted.
-            # Within that broadcast, higher-tier riders (more lifetime
-            # deliveries) get first crack: only the best dispatch_priority
-            # present gets the broadcast now, everyone else in the tier only
-            # sees it once that group's offers expire/reject and the next
-            # dispatch round naturally excludes them (previously_offered).
-            tier_group = [candidate for candidate in candidates if candidate.assignment_type == top_tier]
-            best_priority = min(candidate.dispatch_priority for candidate in tier_group)
-            selected_candidates = [candidate for candidate in tier_group if candidate.dispatch_priority == best_priority]
+            selected_candidates = [candidate for candidate in candidates if candidate.assignment_type == top_tier]
         round_number = order.rider_assignment_round + 1
         now = datetime.now(UTC)
         created_offers: list[OrderDispatchOffer] = []
@@ -781,7 +764,6 @@ class RiderDispatchService:
             .where(User.is_active.is_(True))
         )
         users = result.scalars().unique().all()
-        tiers, eligibility = await self._load_gig_rider_extras(list(users))
         ranked: list[RiderDispatchCandidateResponse] = []
         for user in users:
             if not self._user_is_rider(user):
@@ -790,13 +772,7 @@ class RiderDispatchService:
                 continue
             if self._is_busy(user):
                 continue
-            candidate = self._build_candidate(
-                user,
-                restaurant,
-                order,
-                tier=tiers.get(user.id),
-                can_accept_offers=eligibility.get(user.id, True),
-            )
+            candidate = self._build_candidate(user, restaurant, order)
             if candidate is not None:
                 if restaurant.rider_dispatch_policy == "private_only" and candidate.assignment_type != "rider_private":
                     continue
@@ -807,53 +783,25 @@ class RiderDispatchService:
             ranked,
             key=lambda item: (
                 tier_order.get(item.assignment_type, 99),
-                item.dispatch_priority,
                 item.distance_km is None,
                 item.distance_km if item.distance_km is not None else 999999.0,
                 item.id,
             ),
         )
 
-    async def _load_gig_rider_extras(self, users: list[User]) -> tuple[dict[int, RiderTier], dict[int, bool]]:
-        """Batch tier + per-rider wallet eligibility for every platform-tier
-        candidate in one pass, rather than querying per candidate. Private
-        riders are never tiered or wallet-gated (skipped)."""
-        gig_user_ids = [u.id for u in users if u.rider_work_mode == "platform"]
-        tiers = await get_tiers_for_riders(self.session, gig_user_ids)
-        wallet_service = WalletService(self.session)
-        eligibility: dict[int, bool] = {}
-        for user_id in gig_user_ids:
-            eligibility[user_id] = await wallet_service.can_accept_offers(user_id)
-        return tiers, eligibility
-
     def _build_candidate(
         self,
         user: User,
         restaurant: Restaurant,
         order: Order | None,
-        tier: RiderTier | None = None,
-        can_accept_offers: bool = True,
     ) -> RiderDispatchCandidateResponse | None:
         assignment_type = self._candidate_assignment_type(user, restaurant.id)
         if assignment_type is None:
-            return None
-        # Freelance/platform dispatch is paused platform-wide (see
-        # Settings.gig_dispatch_enabled) until COD cash settlement
-        # between gig riders and restaurants is built. Private (restaurant-
-        # employed) riders are unaffected.
-        if assignment_type in {"open", "platform"} and not settings.gig_dispatch_enabled:
             return None
         if user.rider_work_mode == "assigned" and assignment_type == "open":
             return None
         if assignment_type in {"open", "platform"} and not user.is_accepting_offers:
             return None
-        # A gig rider (open pool or platform-tier) whose wallet has run out
-        # (unpaid COD commission) can't be offered — or manually assigned —
-        # new work until they top up. Private riders are paid by the
-        # restaurant directly and are never wallet-gated.
-        if assignment_type in {"open", "platform"} and not can_accept_offers:
-            return None
-        resolved_tier = tier or tier_for_delivery_count(0)
         distance_km = self._distance_to_restaurant(user, restaurant)
         return RiderDispatchCandidateResponse(
             id=user.id,
@@ -867,10 +815,6 @@ class RiderDispatchService:
             distance_km=distance_km,
             current_latitude=user.current_latitude,
             current_longitude=user.current_longitude,
-            tier=resolved_tier.name,
-            tier_label=resolved_tier.label,
-            dispatch_priority=resolved_tier.dispatch_priority,
-            can_accept_offers=can_accept_offers,
         )
 
     def _candidate_assignment_type(self, user: User, restaurant_id: int) -> str | None:

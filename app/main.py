@@ -28,7 +28,7 @@ from app.modules.rider_payouts.api import router as rider_payouts_router
 from app.modules.promotions.api import router as promotions_admin_router
 from app.modules.promotions.merchant_api import router as promotions_merchant_router
 from app.modules.rider_payouts.review_api import router as rider_review_router
-from app.modules.rider_payouts.wallet_api import router as rider_wallet_router
+from app.modules.rider_payroll.api import router as rider_payroll_router
 from app.modules.restaurant_settlements.api import router as restaurant_settlements_router
 from app.modules.payments.api import router as payments_router
 from app.modules.realtime.bus import realtime_bus
@@ -157,7 +157,7 @@ app.include_router(notifications_router, prefix=settings.api_v1_prefix)
 app.include_router(rider_dispatch_router, prefix=settings.api_v1_prefix)
 app.include_router(rider_applications_router, prefix=settings.api_v1_prefix)
 app.include_router(rider_payouts_router, prefix=settings.api_v1_prefix)
-app.include_router(rider_wallet_router, prefix=settings.api_v1_prefix)
+app.include_router(rider_payroll_router, prefix=settings.api_v1_prefix)
 app.include_router(rider_review_router, prefix=settings.api_v1_prefix)
 app.include_router(promotions_admin_router, prefix=settings.api_v1_prefix)
 app.include_router(promotions_merchant_router, prefix=settings.api_v1_prefix)

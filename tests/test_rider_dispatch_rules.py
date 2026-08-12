@@ -3,7 +3,6 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
-from app.core.config import settings
 from app.modules.orders.models import OrderStatus
 from app.modules.orders.schemas import MerchantOrderResponse
 from app.modules.rider_dispatch.service import RiderDispatchService
@@ -44,8 +43,7 @@ def _restaurant():
     )
 
 
-def test_offline_platform_rider_is_not_a_dispatch_candidate(monkeypatch):
-    monkeypatch.setattr(settings, "gig_dispatch_enabled", True)
+def test_offline_platform_rider_is_not_a_dispatch_candidate():
     service = RiderDispatchService(None)  # type: ignore[arg-type]
 
     candidate = service._build_candidate(
@@ -57,21 +55,7 @@ def test_offline_platform_rider_is_not_a_dispatch_candidate(monkeypatch):
     assert candidate is None
 
 
-def test_gig_dispatch_disabled_by_default_blocks_platform_candidate():
-    assert settings.gig_dispatch_enabled is False
-    service = RiderDispatchService(None)  # type: ignore[arg-type]
-
-    candidate = service._build_candidate(
-        _rider(accepting=True),
-        _restaurant(),
-        None,
-    )
-
-    assert candidate is None
-
-
-def test_gig_dispatch_enabled_flag_allows_platform_candidate(monkeypatch):
-    monkeypatch.setattr(settings, "gig_dispatch_enabled", True)
+def test_online_platform_rider_is_a_dispatch_candidate():
     service = RiderDispatchService(None)  # type: ignore[arg-type]
 
     candidate = service._build_candidate(

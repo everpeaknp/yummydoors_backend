@@ -5,7 +5,6 @@ from sqlalchemy import and_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.config import settings
 from app.core.geo import haversine_km
 from app.modules.auth.models import User, UserRole
 from app.modules.analytics.service import apply_completed_order_loyalty
@@ -31,7 +30,6 @@ from app.modules.orders.schemas import (
 from app.modules.restaurant_settlements.schemas import RestaurantSettlementResponse
 from app.modules.restaurant_settlements.service import RestaurantSettlementService
 from app.modules.rider_dispatch.service import RiderDispatchService
-from app.modules.rider_payouts.service import RiderPayoutService
 
 
 # Explicit, enforced state machine for merchant-driven status changes.
@@ -873,15 +871,6 @@ class OrderService:
                 order = await self.repo.get_by_id(order_id)
             try:
                 if order is not None:
-                    await RiderPayoutService(self.session).compute_payout_for_order(order)
-            except Exception:
-                await self.session.rollback()
-                logging.getLogger("yummy.order").exception(
-                    "Failed to compute rider payout for order %s", order_id
-                )
-                order = await self.repo.get_by_id(order_id)
-            try:
-                if order is not None:
                     await RestaurantSettlementService(self.session).compute_settlement_for_order(order)
             except Exception:
                 await self.session.rollback()
@@ -958,11 +947,6 @@ class OrderService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Selected rider is not assigned to this restaurant.",
             )
-        if not is_private_rider and not settings.gig_dispatch_enabled:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Platform rider dispatch is temporarily paused. Only your private team can be assigned.",
-            )
         if not is_private_rider and not rider.is_accepting_offers:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -1005,7 +989,6 @@ class OrderService:
         has_restaurant_assignment = self._user_has_rider_access(rider, order.restaurant_id)
         can_claim_open = (
             rider.rider_work_mode == "platform"
-            and settings.gig_dispatch_enabled
             and rider.is_accepting_offers
             and order.rider_assignment_state == "open_unfilled"
             and order.restaurant is not None
@@ -1120,22 +1103,13 @@ class OrderService:
         if previous_status != OrderStatus.delivered:
             # Re-fetched fresh above (rather than session.refresh(), which
             # only refreshes column attributes) so .rider/.restaurant are
-            # guaranteed loaded and not stale before computing the payout.
+            # guaranteed loaded and not stale before computing the settlement.
             try:
                 await apply_completed_order_loyalty(self.session, order)
             except Exception:
                 await self.session.rollback()
                 logging.getLogger("yummy.order").exception(
                     "Failed to update customer loyalty for order %s", order_id
-                )
-                order = await self.repo.get_by_id(order_id)
-            try:
-                if order is not None:
-                    await RiderPayoutService(self.session).compute_payout_for_order(order)
-            except Exception:
-                await self.session.rollback()
-                logging.getLogger("yummy.order").exception(
-                    "Failed to compute rider payout for order %s", order_id
                 )
                 order = await self.repo.get_by_id(order_id)
             try:

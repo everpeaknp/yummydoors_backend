@@ -11,10 +11,14 @@ from app.modules.orders.models import Order
 from app.modules.restaurant_settlements.models import RestaurantSettlement
 from app.modules.restaurant_settlements.schemas import RestaurantSettlementResponse
 
-# Cash-on-delivery: the merchant already has the customer's cash in hand,
-# so the platform's commission is a debt the merchant owes back — everything
-# else (esewa, card, etc.) means the platform is already holding the money
-# and owes the merchant their share instead.
+# Cash-on-delivery collected by a private (restaurant-employed) rider means
+# the merchant already effectively has that cash in hand (their own staff
+# collected it) — the platform's commission is a debt the merchant owes
+# back. But a platform-tier rider is YummyDoors' own salaried staff, not
+# the restaurant's — cash they collect goes through the platform just like
+# an online payment does, so the platform owes the restaurant their share
+# the same way it would for any other order. Every other case (any online
+# payment, regardless of rider) already has the platform holding the money.
 _COD_PAYMENT_METHODS = {"cash", "cod"}
 
 
@@ -36,7 +40,9 @@ class RestaurantSettlementService:
             return None
 
         payment_method = (order.payment_method or "cash").strip().lower()
-        direction = "collect_from_merchant" if payment_method in _COD_PAYMENT_METHODS else "pay_to_merchant"
+        is_cod = payment_method in _COD_PAYMENT_METHODS
+        delivered_by_private_rider = order.rider is not None and order.rider.rider_work_mode != "platform"
+        direction = "collect_from_merchant" if is_cod and delivered_by_private_rider else "pay_to_merchant"
         rate = order.restaurant.commission_rate_percent
         commission_amount = round(order.subtotal_amount * (rate / 100), 2)
 

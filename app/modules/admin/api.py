@@ -171,6 +171,13 @@ async def update_rider_platform_status(
         user.rider_work_mode = "platform"
     elif user.rider_work_mode == "platform":
         user.rider_work_mode = "assigned"
+        # No longer salaried -- drop their salary row so a revoked rider
+        # doesn't linger on the admin payroll screen.
+        from app.modules.rider_payroll.models import RiderSalary
+
+        salary = await db.scalar(select(RiderSalary).where(RiderSalary.rider_user_id == user.id))
+        if salary is not None:
+            await db.delete(salary)
     await db.commit()
     return ApiResponse(
         message="Rider platform status updated successfully.",
