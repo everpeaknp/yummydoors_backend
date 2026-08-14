@@ -268,7 +268,7 @@ class CatalogService:
             )
         item = await self.repository.create_menu_item(restaurant_id, data)
         await self.repository.save()
-        await self.repository.refresh(item)
+        item = await self.repository.get_menu_item_by_id(item.id)
         return MenuItemSummary.model_validate(item)
 
     async def update_menu_item(
@@ -303,7 +303,7 @@ class CatalogService:
         if not item:
             return None
         await self.repository.save()
-        await self.repository.refresh(item)
+        item = await self.repository.get_menu_item_by_id(item.id)
         return MenuItemSummary.model_validate(item)
 
     async def delete_menu_item(self, user: User, restaurant_id: int, item_id: int) -> bool:
